@@ -15,7 +15,7 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 - Phase 6 adds authenticated backend indexing jobs, progress/status polling, ownership checks, duplicate-request handling, and owned investigation records.
 - Phase 7 adds worker-owned, bounded investigation tools for entity search, dependencies, callers, relationship traversal, evidence paths, source locations, and deterministic ranking.
 - Phase 8 adds a server-only Gemini client, bounded function-calling orchestration, validated tool arguments, evidence-backed reports, structured tool/provider failures, and asynchronous investigation execution. The live provider smoke request is currently subject to a transient Gemini HTTP 503 high-demand response; the automated local contract is verified.
-- The investigation UI remains intentionally deferred to Phase 9.
+- Phase 9 adds the authenticated browser workflow: server-side backend proxy routes, repository indexing and polling, investigation submission and polling, responsive result rendering, graph evidence paths, source locations, checklists, uncertainty, and actionable error states.
 
 ### Phase 2 local authentication setup
 
