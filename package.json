@@ -5,7 +5,10 @@
   "packageManager": "pnpm@10.13.1",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "tree-sitter",
+      "tree-sitter-javascript",
+      "tree-sitter-typescript"
     ]
   },
   "engines": {
@@ -23,7 +26,8 @@
     "db:up": "docker compose up -d falkordb",
     "db:down": "docker compose down",
     "verify:phase1": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "verify:phase2": "pnpm verify:phase1"
+    "verify:phase2": "pnpm verify:phase1",
+    "verify:phase4": "pnpm verify:phase2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

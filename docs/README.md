@@ -10,13 +10,14 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 - Phase 1 establishes the workspace, local FalkorDB service, environment contract, package boundaries, and backend health check.
 - Phase 2 adds GitHub-only Auth.js authentication and a short-lived signed frontend-to-backend identity boundary. Local configuration lives in `frontend/.env.local`, `backend/.env`, and `worker/.env`.
 - Phase 3 implements the worker repository boundary: public GitHub URL validation, bounded shallow cloning, commit metadata, file filtering, and cleanup.
-- Extraction, graph ingestion, LLM orchestration, and the investigation UI remain intentionally deferred to their planned phases.
+- Phase 4 adds the first Tree-sitter extraction slice for TypeScript/JavaScript entities, source ranges, resolvable imports, direct calls, stable identifiers, and syntax diagnostics.
+- Graph ingestion, LLM orchestration, and the investigation UI remain intentionally deferred to their planned phases.
 
 ### Phase 2 local authentication setup
 
 1. Create a GitHub OAuth App with callback URL `http://localhost:3000/api/auth/callback/github`.
 2. Put frontend values in `frontend/.env.local`, backend values in `backend/.env`, and worker values in `worker/.env`.
-3. Use backend port `5000`; set `BACKEND_URL=http://127.0.0.1:5000` in the frontend environment.
+3. Use backend port `5001`; set `BACKEND_URL=http://127.0.0.1:5001` in the frontend environment.
 4. Run the local verification gate with `pnpm verify:phase2`. The real GitHub sign-in redirect requires the OAuth App credentials from step 1.
 
 This must be more than a generic code-chat interface or a wrapper around FalkorDB CodeGraph. Reuse existing extraction logic where appropriate; build the investigation workflow, graph queries, ranking, and evidence-backed answer flow as our contribution.

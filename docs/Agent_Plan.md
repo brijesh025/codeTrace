@@ -247,6 +247,8 @@ The clone mechanism may invoke Git, but no repository-provided lifecycle scripts
 
 ## Phase 4 — TypeScript/JavaScript extraction
 
+Status: initial extraction slice implemented and verified. Tree-sitter now produces stable repository, file, module, function, and class entities, resolvable relative imports, unambiguous direct calls, source ranges, and syntax diagnostics.
+
 ### Work
 
 Support the initial language family:

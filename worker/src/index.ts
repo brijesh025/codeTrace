@@ -33,3 +33,13 @@ export type {
   RepositoryReference,
   RepositoryWorkspace,
 } from "./repository.js";
+export { extractRepository } from "./extraction.js";
+export type {
+  ExtractionDiagnostic,
+  ExtractionEntity,
+  ExtractionEntityKind,
+  ExtractionFile,
+  ExtractionInput,
+  ExtractionRelationship,
+  ExtractionResult,
+} from "./extraction.js";
