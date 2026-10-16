@@ -303,6 +303,8 @@ Rules:
 
 ## Phase 5 — Idempotent FalkorDB loading
 
+Status: implementation complete and verified. The worker graph store uses parameterized `GRAPH.QUERY` calls with stable `MERGE` keys, revision metadata, counts, repeat-load idempotency, and replacement of older revisions.
+
 ### Work
 
 1. Define stable node and relationship identifiers.

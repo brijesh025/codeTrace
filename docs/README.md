@@ -11,7 +11,8 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 - Phase 2 adds GitHub-only Auth.js authentication and a short-lived signed frontend-to-backend identity boundary. Local configuration lives in `frontend/.env.local`, `backend/.env`, and `worker/.env`.
 - Phase 3 implements the worker repository boundary: public GitHub URL validation, bounded shallow cloning, commit metadata, file filtering, and cleanup.
 - Phase 4 adds the first Tree-sitter extraction slice for TypeScript/JavaScript entities, source ranges, resolvable imports, direct calls, stable identifiers, and syntax diagnostics.
-- Graph ingestion, LLM orchestration, and the investigation UI remain intentionally deferred to their planned phases.
+- Phase 5 adds worker-owned, parameterized FalkorDB graph loading with idempotent writes, revision replacement, evidence metadata, and counts.
+- LLM orchestration and the investigation UI remain intentionally deferred to their planned phases.
 
 ### Phase 2 local authentication setup
 

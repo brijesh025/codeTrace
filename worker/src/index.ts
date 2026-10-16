@@ -43,3 +43,10 @@ export type {
   ExtractionRelationship,
   ExtractionResult,
 } from "./extraction.js";
+export { createGraphCommandClient, GraphStore } from "./graph-store.js";
+export type {
+  GraphCommandClient,
+  GraphLoadInput,
+  GraphLoadResult,
+  GraphStoreOptions,
+} from "./graph-store.js";

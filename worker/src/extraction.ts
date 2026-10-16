@@ -91,7 +91,7 @@ function createEntity(
   return {
     ...range,
     confidence,
-    id: hashId(kind, input.repositoryId, path, name, String(range.lineStart)),
+    id: hashId(kind, input.repositoryId, input.commitSha, path, name, String(range.lineStart)),
     kind,
     name,
     path,

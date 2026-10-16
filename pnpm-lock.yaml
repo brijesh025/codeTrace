@@ -88,6 +88,9 @@ importers:
 
   worker:
     dependencies:
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0
       tree-sitter:
         specifier: ^0.21.1
         version: 0.21.1

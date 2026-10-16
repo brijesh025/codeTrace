@@ -27,7 +27,8 @@
     "db:down": "docker compose down",
     "verify:phase1": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "verify:phase2": "pnpm verify:phase1",
-    "verify:phase4": "pnpm verify:phase2"
+    "verify:phase4": "pnpm verify:phase2",
+    "verify:phase5": "pnpm verify:phase4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
