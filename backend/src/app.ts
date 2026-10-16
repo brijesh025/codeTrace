@@ -151,7 +151,9 @@ export function buildApp({
       return reply.code(404).send({ error: "Repository not found" });
     }
 
-    return reply.code(201).send(investigation);
+    const statusCode =
+      investigation.status === "queued" || investigation.status === "running" ? 202 : 201;
+    return reply.code(statusCode).send(investigation);
   });
 
   app.get("/investigations/:id", async (request, reply) => {
@@ -178,6 +180,7 @@ export function buildApp({
   });
 
   app.addHook("onClose", async () => {
+    await investigationStore?.close?.();
     await graphHealthClient.quit();
   });
 

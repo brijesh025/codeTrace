@@ -61,6 +61,11 @@ export interface RepositoryIndexResult extends GraphLoadResult {
   filesProcessed: number;
 }
 
+export interface RepositoryRevision {
+  commitSha: string;
+  repositoryId: string;
+}
+
 export type IndexProgressReporter = (progress: Partial<IndexJobProgress>) => void;
 
 export type RepositoryIndexer = (
@@ -192,6 +197,7 @@ export class IndexJobManager {
   private readonly indexRepository: RepositoryIndexer;
   private readonly jobs = new Map<string, IndexJob>();
   private readonly activeRepositories = new Map<string, string>();
+  private readonly latestRevisions = new Map<string, RepositoryRevision>();
   private readonly ownedRepositories = new Set<string>();
 
   constructor(options: IndexJobManagerOptions = {}) {
@@ -202,6 +208,10 @@ export class IndexJobManager {
 
   hasRepository(userId: string, repositoryId: string): boolean {
     return this.ownedRepositories.has(ownerRepositoryKey(userId, repositoryId));
+  }
+
+  getLatestRevision(userId: string, repositoryId: string): RepositoryRevision | null {
+    return this.latestRevisions.get(ownerRepositoryKey(userId, repositoryId)) ?? null;
   }
 
   start(input: StartIndexRequest): StartIndexResult {
@@ -293,6 +303,10 @@ export class IndexJobManager {
         relationshipCount: result.relationshipCount,
       };
       job.status = "succeeded";
+      this.latestRevisions.set(repositoryKey, {
+        commitSha: result.commitSha,
+        repositoryId: result.repositoryId,
+      });
     } catch (error) {
       job.error = errorDetails(error);
       job.status = "failed";

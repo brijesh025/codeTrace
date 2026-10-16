@@ -12,9 +12,10 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 - Phase 3 implements the worker repository boundary: public GitHub URL validation, bounded shallow cloning, commit metadata, file filtering, and cleanup.
 - Phase 4 adds the first Tree-sitter extraction slice for TypeScript/JavaScript entities, source ranges, resolvable imports, direct calls, stable identifiers, and syntax diagnostics.
 - Phase 5 adds worker-owned, parameterized FalkorDB graph loading with idempotent writes, revision replacement, evidence metadata, and counts.
-- Phase 6 adds authenticated backend indexing jobs, progress/status polling, ownership checks, duplicate-request handling, and owned investigation records. Backend investigation execution and LLM orchestration remain deferred to Phase 8.
+- Phase 6 adds authenticated backend indexing jobs, progress/status polling, ownership checks, duplicate-request handling, and owned investigation records.
 - Phase 7 adds worker-owned, bounded investigation tools for entity search, dependencies, callers, relationship traversal, evidence paths, source locations, and deterministic ranking.
-- LLM orchestration and the investigation UI remain intentionally deferred to their planned phases.
+- Phase 8 adds a server-only Gemini client, bounded function-calling orchestration, validated tool arguments, evidence-backed reports, structured tool/provider failures, and asynchronous investigation execution. The live provider smoke request is currently subject to a transient Gemini HTTP 503 high-demand response; the automated local contract is verified.
+- The investigation UI remains intentionally deferred to Phase 9.
 
 ### Phase 2 local authentication setup
 
@@ -27,7 +28,11 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 
 The backend accepts a short-lived frontend identity token on the Phase 6 endpoints. Start indexing with `POST /repositories/index` and a JSON body containing `repositoryUrl` and an optional `idempotencyKey`. The response contains a job `id`; poll `GET /repositories/:id/index-status` with that returned job ID. A new request returns `202`, an active or idempotent duplicate returns `200`, and a failed job includes a structured `error` object.
 
-`POST /investigations` currently creates an authenticated, repository-owned pending record. Its backend execution and LLM orchestration are intentionally deferred to Phase 8; Phase 7 provides the worker tools those workflows will call.
+`POST /investigations` creates an authenticated, repository-owned investigation. When a successful indexed revision is available, the backend queues the investigation and runs the Phase 8 agent asynchronously; poll `GET /investigations/:id` for `queued`, `running`, `succeeded`, or `failed` status and the evidence-backed report.
+
+### Phase 8 agent workflow
+
+The backend calls Gemini through a server-only API client configured by `LLM_API_KEY`, `LLM_MODEL`, and `LLM_TIMEOUT_MS` in `backend/.env`. The model may select only the six bounded worker investigation tools. Tool arguments are validated server-side and repository/commit scope is supplied by the backend. Reports are accepted only when substantive findings map to retrieved evidence paths; model-generated paths and source locations are not trusted.
 
 ### Phase 7 investigation tools
 

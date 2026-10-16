@@ -407,6 +407,8 @@ The scoring should be explicit, bounded, and testable before any LLM-generated r
 
 ## Phase 8 — LLM agent workflow
 
+Status: implementation complete and automated verification passed. The live Gemini smoke request reached the configured provider but was temporarily rejected with HTTP 503 high demand after bounded retries; Phase 9 remains gated until a live provider response is available.
+
 ### Work
 
 1. Define the server-side model client.
