@@ -1,16 +1,51 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import { z } from "zod";
 
 import { verifyBackendToken } from "./auth.js";
 import type { GraphHealthClient } from "./graph-health.js";
+import type { BackendPrincipal } from "./auth.js";
+import type { IndexJobManager } from "./indexing.js";
+import type { InvestigationStore } from "./investigations.js";
 
 export interface BuildAppOptions {
   authInternalSecret?: string;
   graphHealthClient: GraphHealthClient;
+  indexingService?: Pick<IndexJobManager, "getStatus" | "hasRepository" | "start">;
+  investigationStore?: InvestigationStore;
+}
+
+const indexRequestSchema = z
+  .object({
+    idempotencyKey: z.string().trim().min(1).max(128).optional(),
+    repositoryUrl: z.string().trim().url(),
+  })
+  .strict();
+
+const investigationRequestSchema = z
+  .object({
+    question: z.string().trim().min(1).max(2_000),
+    repositoryId: z.string().trim().min(1).max(200),
+  })
+  .strict();
+
+const idParamsSchema = z.object({ id: z.string().trim().min(1) });
+
+async function authenticate(
+  request: FastifyRequest,
+  secret: string | undefined,
+): Promise<BackendPrincipal | null> {
+  return verifyBackendToken(request.headers.authorization, secret);
+}
+
+function validationError(reply: FastifyReply, issues: unknown) {
+  return reply.code(400).send({ error: "Invalid request", issues });
 }
 
 export function buildApp({
   authInternalSecret,
   graphHealthClient,
+  indexingService,
+  investigationStore,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: true });
 
@@ -44,6 +79,102 @@ export function buildApp({
     }
 
     return principal;
+  });
+
+  app.post("/repositories/index", async (request, reply) => {
+    const principal = await authenticate(request, authInternalSecret);
+    if (!principal) {
+      return reply.code(401).send({ error: "Authentication required" });
+    }
+
+    if (!indexingService) {
+      return reply.code(503).send({ error: "Indexing service is not configured" });
+    }
+
+    const parsed = indexRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return validationError(reply, parsed.error.issues);
+    }
+
+    try {
+      const result = indexingService.start({ ...parsed.data, userId: principal.userId });
+      return reply.code(result.duplicate ? 200 : 202).send(result.job);
+    } catch (error) {
+      const statusCode =
+        error instanceof Error && error.name === "IndexingConflictError" ? 409 : 400;
+      return reply.code(statusCode).send({
+        error: error instanceof Error ? error.message : "Could not start indexing",
+      });
+    }
+  });
+
+  app.get("/repositories/:id/index-status", async (request, reply) => {
+    const principal = await authenticate(request, authInternalSecret);
+    if (!principal) {
+      return reply.code(401).send({ error: "Authentication required" });
+    }
+
+    if (!indexingService) {
+      return reply.code(503).send({ error: "Indexing service is not configured" });
+    }
+
+    const parsed = idParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return validationError(reply, parsed.error.issues);
+    }
+
+    const job = indexingService.getStatus(principal.userId, parsed.data.id);
+    if (!job) {
+      return reply.code(404).send({ error: "Indexing job not found" });
+    }
+
+    return job;
+  });
+
+  app.post("/investigations", async (request, reply) => {
+    const principal = await authenticate(request, authInternalSecret);
+    if (!principal) {
+      return reply.code(401).send({ error: "Authentication required" });
+    }
+
+    if (!investigationStore) {
+      return reply.code(503).send({ error: "Investigation service is not configured" });
+    }
+
+    const parsed = investigationRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return validationError(reply, parsed.error.issues);
+    }
+
+    const investigation = investigationStore.create({ ...parsed.data, userId: principal.userId });
+    if (!investigation) {
+      return reply.code(404).send({ error: "Repository not found" });
+    }
+
+    return reply.code(201).send(investigation);
+  });
+
+  app.get("/investigations/:id", async (request, reply) => {
+    const principal = await authenticate(request, authInternalSecret);
+    if (!principal) {
+      return reply.code(401).send({ error: "Authentication required" });
+    }
+
+    if (!investigationStore) {
+      return reply.code(503).send({ error: "Investigation service is not configured" });
+    }
+
+    const parsed = idParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return validationError(reply, parsed.error.issues);
+    }
+
+    const investigation = investigationStore.get(principal.userId, parsed.data.id);
+    if (!investigation) {
+      return reply.code(404).send({ error: "Investigation not found" });
+    }
+
+    return investigation;
   });
 
   app.addHook("onClose", async () => {

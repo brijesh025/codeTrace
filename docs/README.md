@@ -12,6 +12,8 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 - Phase 3 implements the worker repository boundary: public GitHub URL validation, bounded shallow cloning, commit metadata, file filtering, and cleanup.
 - Phase 4 adds the first Tree-sitter extraction slice for TypeScript/JavaScript entities, source ranges, resolvable imports, direct calls, stable identifiers, and syntax diagnostics.
 - Phase 5 adds worker-owned, parameterized FalkorDB graph loading with idempotent writes, revision replacement, evidence metadata, and counts.
+- Phase 6 adds authenticated backend indexing jobs, progress/status polling, ownership checks, duplicate-request handling, and owned investigation records. Backend investigation execution and LLM orchestration remain deferred to Phase 8.
+- Phase 7 adds worker-owned, bounded investigation tools for entity search, dependencies, callers, relationship traversal, evidence paths, source locations, and deterministic ranking.
 - LLM orchestration and the investigation UI remain intentionally deferred to their planned phases.
 
 ### Phase 2 local authentication setup
@@ -20,6 +22,16 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 2. Put frontend values in `frontend/.env.local`, backend values in `backend/.env`, and worker values in `worker/.env`.
 3. Use backend port `5001`; set `BACKEND_URL=http://127.0.0.1:5001` in the frontend environment.
 4. Run the local verification gate with `pnpm verify:phase2`. The real GitHub sign-in redirect requires the OAuth App credentials from step 1.
+
+### Phase 6 API flow
+
+The backend accepts a short-lived frontend identity token on the Phase 6 endpoints. Start indexing with `POST /repositories/index` and a JSON body containing `repositoryUrl` and an optional `idempotencyKey`. The response contains a job `id`; poll `GET /repositories/:id/index-status` with that returned job ID. A new request returns `202`, an active or idempotent duplicate returns `200`, and a failed job includes a structured `error` object.
+
+`POST /investigations` currently creates an authenticated, repository-owned pending record. Its backend execution and LLM orchestration are intentionally deferred to Phase 8; Phase 7 provides the worker tools those workflows will call.
+
+### Phase 7 investigation tools
+
+The worker exposes typed tool methods for `find_entities`, `find_dependencies`, `find_callers`, `traverse_relationships`, `get_evidence_path`, and `get_source_locations`. Tool inputs require a repository and commit scope, enforce result/depth limits, and never accept caller-supplied Cypher. Results include source locations and graph relationship paths where available.
 
 This must be more than a generic code-chat interface or a wrapper around FalkorDB CodeGraph. Reuse existing extraction logic where appropriate; build the investigation workflow, graph queries, ranking, and evidence-backed answer flow as our contribution.
 

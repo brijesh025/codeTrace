@@ -40,6 +40,11 @@ export interface GraphLoadResult {
   repositoryId: string;
 }
 
+export interface GraphQueryResult {
+  columns: string[];
+  rows: unknown[][];
+}
+
 export interface GraphStoreOptions {
   client: GraphCommandClient;
   graphName?: string;
@@ -74,12 +79,24 @@ function parameterizedQuery(
   return `CYPHER ${header} ${query}`;
 }
 
+function queryResultFromRaw(result: unknown): GraphQueryResult {
+  if (!Array.isArray(result) || !Array.isArray(result[0]) || !Array.isArray(result[1])) {
+    return { columns: [], rows: [] };
+  }
+
+  return {
+    columns: result[0].filter((value): value is string => typeof value === "string"),
+    rows: result[1].filter((row): row is unknown[] => Array.isArray(row)),
+  };
+}
+
 function nodeQuery(entity: ExtractionEntity, repositoryId: string, commitSha: string): string {
   const label = ENTITY_LABELS[entity.kind];
   return parameterizedQuery(
     `MERGE (n:${label} {id: $id})
      SET n.repositoryId = $repositoryId,
          n.commitSha = $commitSha,
+         n.kind = $kind,
          n.name = $name,
          n.path = $path,
          n.lineStart = $lineStart,
@@ -90,6 +107,7 @@ function nodeQuery(entity: ExtractionEntity, repositoryId: string, commitSha: st
       commitSha,
       confidence: entity.confidence,
       id: entity.id,
+      kind: entity.kind,
       lineEnd: entity.lineEnd,
       lineStart: entity.lineStart,
       name: entity.name,
@@ -205,6 +223,18 @@ export class GraphStore {
       nodeCount: countFromResult(nodeResult),
       relationshipCount: countFromResult(relationshipResult),
     };
+  }
+
+  async query(
+    query: string,
+    parameters: Record<string, string | number | boolean>,
+  ): Promise<GraphQueryResult> {
+    const result = await this.client.call(
+      "GRAPH.QUERY",
+      this.graphName,
+      parameterizedQuery(query, parameters),
+    );
+    return queryResultFromRaw(result);
   }
 
   async deleteGraph(): Promise<void> {

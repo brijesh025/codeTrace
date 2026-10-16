@@ -327,6 +327,8 @@ The MVP will maintain one active indexed revision per repository unless the Code
 
 ## Phase 6 — Backend indexing API and job lifecycle
 
+Status: implementation complete and verified. The backend now exposes authenticated indexing and investigation endpoints, runs clone/extract/load jobs in-process through the worker boundary, reports progress and structured failures, enforces ownership, and handles duplicate requests with idempotency keys and active-repository deduplication.
+
 ### Initial endpoints
 
 ```text
@@ -358,6 +360,8 @@ A queue or separate worker deployment is deferred until load testing demonstrate
 - API tests cover authorization and invalid input.
 
 ## Phase 7 — Investigation tools and ranking
+
+Status: implementation complete and verified. The worker now exposes fixed, bounded investigation tools for entity search, dependency traversal, caller traversal, relationship traversal, evidence paths, and source locations. Queries are parameterized, results include graph/source evidence, and ranking is deterministic with explicit factors.
 
 ### Typed tools
 

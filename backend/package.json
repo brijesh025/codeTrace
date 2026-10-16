@@ -4,13 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "pnpm --filter @codetrace/worker build",
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "predev": "pnpm --filter @codetrace/worker build",
     "start": "node dist/server.js",
+    "pretest": "pnpm --filter @codetrace/worker build",
     "typecheck": "tsc --noEmit",
+    "pretypecheck": "pnpm --filter @codetrace/worker build",
     "test": "vitest run"
   },
   "dependencies": {
+    "@codetrace/worker": "workspace:*",
     "fastify": "^4.29.1",
     "ioredis": "^6.0.0",
     "jose": "^6.2.12",

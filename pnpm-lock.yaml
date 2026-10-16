@@ -17,6 +17,9 @@ importers:
 
   backend:
     dependencies:
+      '@codetrace/worker':
+        specifier: workspace:*
+        version: link:../worker
       dotenv:
         specifier: ^16.6.1
         version: 16.6.1

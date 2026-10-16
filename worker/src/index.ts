@@ -48,5 +48,28 @@ export type {
   GraphCommandClient,
   GraphLoadInput,
   GraphLoadResult,
+  GraphQueryResult,
   GraphStoreOptions,
 } from "./graph-store.js";
+export { InvestigationToolError, InvestigationTools } from "./investigation.js";
+export type {
+  CallerInput,
+  DependencyInput,
+  EvidencePath,
+  EvidencePathInput,
+  EvidencePathResult,
+  FindEntitiesInput,
+  GraphQueryClient,
+  GraphScope,
+  InvestigationEntity,
+  InvestigationEntityKind,
+  InvestigationRelationship,
+  InvestigationRelationshipKind,
+  InvestigationResult,
+  RankedEntity,
+  RankingFactors,
+  RelationshipTraversalInput,
+  SourceLocationInput,
+  SourceLocationResult,
+  TraversalDirection,
+} from "./investigation.js";
