@@ -1,0 +1,22 @@
+# Dependencies and package-manager state
+node_modules/
+.pnpm-store/
+
+# Build and test output
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local worker state
+.codetrace/
+worker/.tmp/
+
+# Phase-evaluation artifacts
+.phase0/

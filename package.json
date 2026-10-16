@@ -1,0 +1,32 @@
+{
+  "name": "codetrace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.13.1"
+  },
+  "scripts": {
+    "build": "pnpm --recursive --if-present run build",
+    "typecheck": "pnpm --recursive --if-present run typecheck",
+    "test": "pnpm --recursive --if-present run test",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "dev": "concurrently -n frontend,backend -c cyan,green \"pnpm --filter @codetrace/frontend dev\" \"pnpm --filter @codetrace/backend dev\"",
+    "db:up": "docker compose up -d falkordb",
+    "db:down": "docker compose down",
+    "verify:phase1": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "verify:phase2": "pnpm verify:phase1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "concurrently": "^10.0.6"
+  }
+}
