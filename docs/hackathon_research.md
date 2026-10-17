@@ -1,4 +1,4 @@
-# Phase 0 Evaluation: CodeGraph and FalkorDB
+# CodeGraph and FalkorDB
 
 **Status:** Complete
 
@@ -10,16 +10,16 @@ CodeTrace's MVP contract requires safe public-GitHub ingestion and extraction fo
 
 ## Evaluated CodeGraph revision
 
-| Item | Evidence |
-| --- | --- |
-| Repository | <https://github.com/FalkorDB/code-graph> |
-| Local revision | `2a7a52c0abb529c93e9f571e7358e097f1b76ab3` |
-| Revision date | 2026-09-14 |
-| Package version | `0.4.2` |
-| License | MIT |
-| Runtime declared by project | Python `>=3.12,<3.14` |
-| Local Python | 3.14.5; incompatible with the declared range |
-| Evaluation runtime | Disposable `python:3.13-bookworm` Docker container |
+| Item                        | Evidence                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| Repository                  | [https://github.com/FalkorDB/code-graph](https://github.com/FalkorDB/code-graph) |
+| Local revision              | `2a7a52c0abb529c93e9f571e7358e097f1b76ab3`                                    |
+| Revision date               | 2026-09-14                                                                      |
+| Package version             | `0.4.2`                                                                       |
+| License                     | MIT                                                                             |
+| Runtime declared by project | Python `>=3.12,<3.14`                                                         |
+| Local Python                | 3.14.5; incompatible with the declared range                                    |
+| Evaluation runtime          | Disposable `python:3.13-bookworm` Docker container                            |
 
 The MIT license permits selective reuse, but licensing is not sufficient reason to adopt a component that does not meet the required language, safety, or reliability boundaries.
 
@@ -45,14 +45,14 @@ The evaluated JavaScript analyzer's `add_dependencies` method is a no-op and it 
 
 The CodeGraph graph model has useful concepts but is not a direct schema match:
 
-| CodeGraph | CodeTrace |
-| --- | --- |
-| `File` | `File` |
-| `Function` and `Method` | `Function` with a `kind` property where needed |
-| `Class` | `Class` |
-| `DEFINES` | `CONTAINS` |
-| `CALLS` | `CALLS` |
-| no JavaScript import mapping | `IMPORTS` and derived `DEPENDS_ON` implemented by CodeTrace |
+| CodeGraph                                   | CodeTrace                                                                    |
+| ------------------------------------------- | ---------------------------------------------------------------------------- |
+| `File`                                    | `File`                                                                     |
+| `Function` and `Method`                 | `Function` with a `kind` property where needed                           |
+| `Class`                                   | `Class`                                                                    |
+| `DEFINES`                                 | `CONTAINS`                                                                 |
+| `CALLS`                                   | `CALLS`                                                                    |
+| no JavaScript import mapping                | `IMPORTS` and derived `DEPENDS_ON` implemented by CodeTrace              |
 | source `src_start`/`src_end` properties | `lineStart`/`lineEnd`, normalized to a documented user-facing convention |
 
 CodeGraph stores Tree-sitter row positions, which are zero-based. CodeTrace will preserve raw parser ranges internally and expose one-based line numbers in user-facing evidence.
@@ -95,26 +95,26 @@ This confirms that FalkorDB accepts CodeTrace's required property-graph shape an
 
 ### CodeGraph against a public JavaScript repository
 
-| Item | Result |
-| --- | --- |
-| Repository | <https://github.com/expressjs/serve-static.git> |
-| Evaluated commit | `109a299c26d2d532027bb6e66e50e365eeb8fcdd` |
-| Indexed graph | `code:serve-static.git:master` |
-| Nodes written before process exit | 11 |
-| Relationships written before process exit | 7 |
-| Process exit code | 139 |
+| Item                                      | Result                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Repository                                | [https://github.com/expressjs/serve-static.git](https://github.com/expressjs/serve-static.git) |
+| Evaluated commit                          | `109a299c26d2d532027bb6e66e50e365eeb8fcdd`                                                  |
+| Indexed graph                             | `code:serve-static.git:master`                                                              |
+| Nodes written before process exit         | 11                                                                                            |
+| Relationships written before process exit | 7                                                                                             |
+| Process exit code                         | 139                                                                                           |
 
 Despite the process failure, the generated graph provided inspectable source evidence. Examples include:
 
-| File | Function | Start line | End line |
-| --- | --- | ---: | ---: |
-| `index.js` | `serveStatic` | 36 | 125 |
-| `index.js` | `collapseLeadingSlashes` | 131 | 141 |
-| `index.js` | `createHtmlDocument` | 151 | 162 |
-| `index.js` | `createNotFoundDirectoryListener` | 169 | 173 |
-| `index.js` | `createRedirectDirectoryListener` | 180 | 207 |
-| `scripts/version-history.js` | `getLocaleDate` | 36 | 42 |
-| `scripts/version-history.js` | `zeroPad` | 44 | 46 |
+| File                           | Function                            | Start line | End line |
+| ------------------------------ | ----------------------------------- | ---------: | -------: |
+| `index.js`                   | `serveStatic`                     |         36 |      125 |
+| `index.js`                   | `collapseLeadingSlashes`          |        131 |      141 |
+| `index.js`                   | `createHtmlDocument`              |        151 |      162 |
+| `index.js`                   | `createNotFoundDirectoryListener` |        169 |      173 |
+| `index.js`                   | `createRedirectDirectoryListener` |        180 |      207 |
+| `scripts/version-history.js` | `getLocaleDate`                   |         36 |       42 |
+| `scripts/version-history.js` | `zeroPad`                         |         44 |       46 |
 
 Each example had a persisted `(:File)-[:DEFINES]->(:Function)` path. The run did not produce reliable `CALLS` or JavaScript import relationships before it exited.
 
@@ -135,12 +135,12 @@ No CodeGraph source will be copied into CodeTrace during the MVP. Its broad appr
 
 ## Phase 0 exit criteria
 
-| Criterion | Status | Evidence |
-| --- | --- | --- |
-| Decision and evidence are documented | Pass | This document |
-| FalkorDB starts and accepts a local query | Pass | Docker Compose started FalkorDB; Node.js wrote and read a graph record |
-| A public sample repository produces inspectable graph data | Pass, with reliability failure recorded | `serve-static` produced 11 nodes, 7 relationships, source paths, and source ranges before CodeGraph exited 139 |
-| The chosen approach can preserve paths and line ranges | Pass | CodeGraph's Tree-sitter-generated JavaScript graph preserved file paths and ranges; CodeTrace will preserve the same parser evidence in its normalized schema |
+| Criterion                                                  | Status                                  | Evidence                                                                                                                                                      |
+| ---------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision and evidence are documented                       | Pass                                    | This document                                                                                                                                                 |
+| FalkorDB starts and accepts a local query                  | Pass                                    | Docker Compose started FalkorDB; Node.js wrote and read a graph record                                                                                        |
+| A public sample repository produces inspectable graph data | Pass, with reliability failure recorded | `serve-static` produced 11 nodes, 7 relationships, source paths, and source ranges before CodeGraph exited 139                                              |
+| The chosen approach can preserve paths and line ranges     | Pass                                    | CodeGraph's Tree-sitter-generated JavaScript graph preserved file paths and ranges; CodeTrace will preserve the same parser evidence in its normalized schema |
 
 ## Result
 
