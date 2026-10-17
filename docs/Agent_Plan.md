@@ -178,8 +178,8 @@ BACKEND_HOST
 BACKEND_PORT
 AUTH_INTERNAL_SECRET
 FALKORDB_URL
-LLM_API_KEY
-LLM_MODEL
+GEMINI_API_KEY
+GROQ_API_KEY
 
 worker/.env
 WORKER_TEMP_DIR
@@ -437,6 +437,8 @@ The model must not modify source files, create issues, create pull requests, exe
 - Each substantive finding includes evidence or an explicit limitation.
 - Tool failures do not become fabricated answers.
 - Provider and model configuration remain environment-driven.
+
+For local development, provider keys belong in `backend/.env` as `GEMINI_API_KEY` and `GROQ_API_KEY`; they must not be placed only in `frontend/.env.local`. The UI exposes exactly `gemini-3.8-flash` and `openai/gpt-oss-20b`. The agent interface and tool boundary remain unchanged.
 
 ## Phase 9 — Frontend workflow
 

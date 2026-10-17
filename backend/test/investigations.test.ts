@@ -13,22 +13,27 @@ function tick(): Promise<void> {
 
 describe("Investigation store", () => {
   it("runs an owned investigation and persists its report", async () => {
+    let runnerModel: string | undefined;
     const store = createInvestigationStore({
       getRevision: () => revision,
       hasRepository: () => true,
-      run: async () => ({
-        report: {
-          checklist: ["Inspect the caller."],
-          findings: [],
-          summary: "Evidence-backed result.",
-          uncertainty: [],
-        },
-        toolCalls: 2,
-        turns: 3,
-      }),
+      run: async (input) => {
+        runnerModel = input.modelId;
+        return {
+          report: {
+            checklist: ["Inspect the caller."],
+            findings: [],
+            summary: "Evidence-backed result.",
+            uncertainty: [],
+          },
+          toolCalls: 2,
+          turns: 3,
+        };
+      },
     });
 
     const created = store.create({
+      modelId: "openai/gpt-oss-20b",
       question: "What is affected?",
       repositoryId: revision.repositoryId,
       userId: "user-1",
@@ -37,10 +42,15 @@ describe("Investigation store", () => {
       throw new Error("Investigation was not created.");
     }
     expect(created).toEqual(
-      expect.objectContaining({ commitSha: revision.commitSha, status: "queued" }),
+      expect.objectContaining({
+        commitSha: revision.commitSha,
+        modelId: "openai/gpt-oss-20b",
+        status: "queued",
+      }),
     );
 
     await tick();
+    expect(runnerModel).toBe("openai/gpt-oss-20b");
     expect(store.get("user-1", created.id)).toEqual(
       expect.objectContaining({
         report: expect.objectContaining({ summary: "Evidence-backed result." }),

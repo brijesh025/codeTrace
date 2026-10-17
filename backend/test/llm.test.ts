@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createGeminiClient, type LlmClientError } from "../src/llm.js";
+import {
+  createGeminiClient,
+  createOpenAiCompatibleClient,
+  type LlmClientError,
+} from "../src/llm.js";
 
 describe("Gemini client", () => {
   it("sends the API key server-side and parses text/function-call parts", async () => {
@@ -59,5 +63,66 @@ describe("Gemini client", () => {
         status: 429,
       }),
     );
+  });
+
+  it("supports the OpenAI-compatible tool-calling contract", async () => {
+    let requestInit: RequestInit | undefined;
+    const client = createOpenAiCompatibleClient({
+      apiKey: "test-groq-key",
+      fetchImpl: async (_input, init) => {
+        requestInit = init;
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  tool_calls: [
+                    {
+                      function: {
+                        arguments: JSON.stringify({ query: "run" }),
+                        name: "find_entities",
+                      },
+                      id: "call-1",
+                      type: "function",
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+      model: "openai/gpt-oss-20b",
+    });
+
+    const result = await client.generate({
+      contents: [{ parts: [{ text: "Investigate this" }], role: "user" }],
+      systemInstruction: { parts: [{ text: "You are CodeTrace." }] },
+      toolConfig: { functionCallingConfig: { mode: "AUTO" } },
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              description: "Find entities.",
+              name: "find_entities",
+              parameters: { type: "object" },
+            },
+          ],
+        },
+      ],
+    });
+
+    const body = JSON.parse(String(requestInit?.body)) as {
+      messages: Array<Record<string, unknown>>;
+      model: string;
+    };
+    expect(new Headers(requestInit?.headers).get("authorization")).toBe("Bearer test-groq-key");
+    expect(body.model).toBe("openai/gpt-oss-20b");
+    expect(body.messages[0]).toEqual({ content: "You are CodeTrace.", role: "system" });
+    expect(result.functionCalls).toEqual([
+      { args: { query: "run" }, id: "call-1", name: "find_entities" },
+    ]);
   });
 });

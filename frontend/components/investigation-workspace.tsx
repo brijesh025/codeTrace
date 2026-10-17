@@ -65,6 +65,14 @@ interface Props {
   userLabel: string;
 }
 
+interface ModelOption {
+  description: string;
+  id: string;
+  label: string;
+  provider: "gemini" | "groq";
+  recommended: boolean;
+}
+
 const terminalIndexStatuses = new Set<IndexStatus>(["failed", "succeeded"]);
 const terminalInvestigationStatuses = new Set<InvestigationStatus>(["failed", "succeeded"]);
 
@@ -98,16 +106,43 @@ export function InvestigationWorkspace({ userLabel }: Props) {
   const [question, setQuestion] = useState("");
   const [job, setJob] = useState<IndexJob | null>(null);
   const [investigation, setInvestigation] = useState<InvestigationRecord | null>(null);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
   const [isInvestigating, setIsInvestigating] = useState(false);
 
-  const canAskQuestion = job?.status === "succeeded";
+  const canAskQuestion = job?.status === "succeeded" && Boolean(selectedModel);
   const indexProgress = useMemo(() => job?.progress, [job?.progress]);
   const jobId = job?.id;
   const jobStatus = job?.status;
   const investigationId = investigation?.id;
   const investigationStatus = investigation?.status;
+
+  useEffect(() => {
+    let active = true;
+    const loadModels = async () => {
+      try {
+        const response = await fetch("/api/backend/models", { cache: "no-store" });
+        const payload = await readJson<{ defaultModel: string | null; models: ModelOption[] }>(
+          response,
+        );
+        if (active) {
+          setModels(payload.models);
+          setSelectedModel(payload.defaultModel ?? payload.models[0]?.id ?? "");
+        }
+      } catch (requestError) {
+        if (active) {
+          setError(requestError instanceof Error ? requestError.message : "Could not load models.");
+        }
+      }
+    };
+
+    void loadModels();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!jobId || !jobStatus || terminalIndexStatuses.has(jobStatus)) {
@@ -216,13 +251,12 @@ export function InvestigationWorkspace({ userLabel }: Props) {
     setIsInvestigating(true);
     try {
       const response = await fetch("/api/backend/investigations", {
-        body: JSON.stringify({ question, repositoryId: job.repositoryId }),
+        body: JSON.stringify({ modelId: selectedModel, question, repositoryId: job.repositoryId }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
       const nextInvestigation = await readJson<InvestigationRecord>(response);
       setInvestigation(nextInvestigation);
-      setQuestion("");
     } catch (requestError) {
       setError(
         requestError instanceof Error ? requestError.message : "Could not start investigation.",
@@ -350,6 +384,26 @@ export function InvestigationWorkspace({ userLabel }: Props) {
               rows={5}
               value={question}
             />
+            <label htmlFor="investigation-model">Model</label>
+            <select
+              disabled={models.length === 0}
+              id="investigation-model"
+              onChange={(event) => setSelectedModel(event.target.value)}
+              value={selectedModel}
+            >
+              {models.length === 0 ? <option value="">No configured models</option> : null}
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label} · {model.provider}
+                  {model.recommended ? " · recommended" : ""}
+                </option>
+              ))}
+            </select>
+            {selectedModel ? (
+              <p className="model-description">
+                {models.find((model) => model.id === selectedModel)?.description}
+              </p>
+            ) : null}
             <button
               className="primary-button"
               disabled={!canAskQuestion || isInvestigating || !question.trim()}
@@ -391,7 +445,8 @@ function InvestigationResultCard({ investigation }: { investigation: Investigati
 
       {investigation.status === "failed" ? (
         <div className="alert alert-error result-alert">
-          {errorLabel(investigation.error, "The investigation failed.")}
+          <span>{errorLabel(investigation.error, "The investigation failed.")}</span>
+          <span>Choose another model above and retry.</span>
         </div>
       ) : null}
 

@@ -186,7 +186,8 @@ textarea:disabled {
 }
 
 .stack-form input,
-.stack-form textarea {
+.stack-form textarea,
+.stack-form select {
   background: #fff;
   border: 1px solid #cbd5e1;
   border-radius: 11px;
@@ -200,7 +201,8 @@ textarea:disabled {
 }
 
 .stack-form input:focus,
-.stack-form textarea:focus {
+.stack-form textarea:focus,
+.stack-form select:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgb(37 99 235 / 13%);
 }
@@ -208,6 +210,13 @@ textarea:disabled {
 .stack-form textarea {
   min-height: 132px;
   resize: vertical;
+}
+
+.model-description {
+  color: var(--muted);
+  font-size: 0.73rem;
+  line-height: 1.45;
+  margin: 0 0 4px;
 }
 
 .primary-button {

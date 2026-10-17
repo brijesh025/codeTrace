@@ -15,6 +15,7 @@ export interface InvestigationRecord {
   createdAt: string;
   error?: InvestigationError;
   id: string;
+  modelId?: string;
   question: string;
   report?: InvestigationReport;
   repositoryId: string;
@@ -25,6 +26,7 @@ export interface InvestigationRecord {
 }
 
 export interface InvestigationRunInput extends RepositoryRevision {
+  modelId?: string;
   question: string;
 }
 
@@ -35,6 +37,7 @@ export type InvestigationRunner = (
 export interface InvestigationStore {
   close?(): Promise<void>;
   create(input: {
+    modelId?: string;
     question: string;
     repositoryId: string;
     userId: string;
@@ -92,6 +95,7 @@ export function createInvestigationStore(
         ...(revision ? { commitSha: revision.commitSha } : {}),
         createdAt: now,
         id: `investigation_${randomUUID()}`,
+        ...(createInput.modelId ? { modelId: createInput.modelId } : {}),
         question: createInput.question,
         ...(options.run ? { status: "queued" as const } : { status: "pending" as const }),
         repositoryId: createInput.repositoryId,
@@ -128,6 +132,7 @@ async function runRecord(
   try {
     const result = await run({
       commitSha: revision.commitSha,
+      ...(record.modelId ? { modelId: record.modelId } : {}),
       question: record.question,
       repositoryId: revision.repositoryId,
     });

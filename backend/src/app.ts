@@ -6,12 +6,14 @@ import type { GraphHealthClient } from "./graph-health.js";
 import type { BackendPrincipal } from "./auth.js";
 import type { IndexJobManager } from "./indexing.js";
 import type { InvestigationStore } from "./investigations.js";
+import type { ModelRegistry } from "./models.js";
 
 export interface BuildAppOptions {
   authInternalSecret?: string;
   graphHealthClient: GraphHealthClient;
   indexingService?: Pick<IndexJobManager, "getStatus" | "hasRepository" | "start">;
   investigationStore?: InvestigationStore;
+  modelRegistry?: ModelRegistry;
 }
 
 const indexRequestSchema = z
@@ -23,6 +25,7 @@ const indexRequestSchema = z
 
 const investigationRequestSchema = z
   .object({
+    modelId: z.string().trim().min(1).max(100).optional(),
     question: z.string().trim().min(1).max(2_000),
     repositoryId: z.string().trim().min(1).max(200),
   })
@@ -46,6 +49,7 @@ export function buildApp({
   graphHealthClient,
   indexingService,
   investigationStore,
+  modelRegistry,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: true });
 
@@ -79,6 +83,17 @@ export function buildApp({
     }
 
     return principal;
+  });
+
+  app.get("/models", async (request, reply) => {
+    const principal = await authenticate(request, authInternalSecret);
+    if (!principal) {
+      return reply.code(401).send({ error: "Authentication required" });
+    }
+    if (!modelRegistry) {
+      return reply.code(503).send({ error: "Model registry is not configured" });
+    }
+    return { defaultModel: modelRegistry.defaultModel, models: modelRegistry.list() };
   });
 
   app.post("/repositories/index", async (request, reply) => {
@@ -146,7 +161,16 @@ export function buildApp({
       return validationError(reply, parsed.error.issues);
     }
 
-    const investigation = investigationStore.create({ ...parsed.data, userId: principal.userId });
+    const modelId = parsed.data.modelId ?? modelRegistry?.defaultModel ?? undefined;
+    if (modelRegistry && (!modelId || !modelRegistry.has(modelId))) {
+      return reply.code(400).send({ error: "Selected model is not available." });
+    }
+
+    const investigation = investigationStore.create({
+      ...parsed.data,
+      ...(modelId ? { modelId } : {}),
+      userId: principal.userId,
+    });
     if (!investigation) {
       return reply.code(404).send({ error: "Repository not found" });
     }

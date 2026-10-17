@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SignJWT } from "jose";
 
 import { buildApp } from "../src/app.js";
+import { loadBackendConfig } from "../src/config.js";
 import { createInvestigationStore } from "../src/investigations.js";
+import { createModelRegistry } from "../src/models.js";
 
 const secret = "phase-eight-api-secret-that-is-at-least-32-chars";
 const revision = {
@@ -54,13 +56,18 @@ describe("Phase 8 investigation API", () => {
         quit: async () => undefined,
       },
       investigationStore: store,
+      modelRegistry: createModelRegistry(loadBackendConfig({ GROQ_API_KEY: "test-groq-key" })),
     });
     apps.push(app);
 
     const started = await app.inject({
       headers: { authorization: `Bearer ${await token("user-1")}` },
       method: "POST",
-      payload: { question: "What is affected?", repositoryId: revision.repositoryId },
+      payload: {
+        modelId: "openai/gpt-oss-20b",
+        question: "What is affected?",
+        repositoryId: revision.repositoryId,
+      },
       url: "/investigations",
     });
     expect(started.statusCode).toBe(202);
@@ -76,6 +83,7 @@ describe("Phase 8 investigation API", () => {
     expect(completed.json()).toEqual(
       expect.objectContaining({
         commitSha: revision.commitSha,
+        modelId: "openai/gpt-oss-20b",
         report: expect.objectContaining({ summary: "The report is evidence-backed." }),
         status: "succeeded",
       }),

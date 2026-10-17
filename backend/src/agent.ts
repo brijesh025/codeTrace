@@ -16,8 +16,9 @@ import type {
 
 import type { LlmClient, LlmContent, LlmFunctionCall, LlmGenerateRequest } from "./llm.js";
 
-const MAX_AGENT_TURNS = 6;
-const MAX_TOOL_CALLS = 12;
+const MAX_AGENT_TURNS = 4;
+const MAX_TOOL_CALLS = 8;
+const MAX_TOOL_RESULT_CHARS = 12_000;
 
 const toolNameSchema = z.enum([
   "find_entities",
@@ -77,6 +78,7 @@ type ToolResult = InvestigationResult | EvidencePathResult | SourceLocationResul
 
 export interface InvestigationAgentInput {
   commitSha: string;
+  modelId?: string;
   question: string;
   repositoryId: string;
 }
@@ -257,6 +259,31 @@ function contentForModel(response: { content?: LlmContent; text: string }): LlmC
   return response.content ?? { parts: [{ text: response.text }], role: "model" };
 }
 
+function compactToolResult(result: unknown): unknown {
+  const serialized = JSON.stringify(result);
+  if (serialized.length <= MAX_TOOL_RESULT_CHARS) {
+    return result;
+  }
+
+  if (typeof result === "object" && result !== null && !Array.isArray(result)) {
+    const compact = { ...(result as Record<string, unknown>) };
+    for (const key of ["results", "paths", "locations"]) {
+      if (Array.isArray(compact[key])) {
+        compact[key] = compact[key].slice(0, 8);
+      }
+    }
+    const compactSerialized = JSON.stringify(compact);
+    if (compactSerialized.length <= MAX_TOOL_RESULT_CHARS) {
+      return compact;
+    }
+  }
+
+  return {
+    truncatedForModel: true,
+    resultPreview: serialized.slice(0, MAX_TOOL_RESULT_CHARS),
+  };
+}
+
 export class InvestigationAgent {
   constructor(
     private readonly llm: LlmClient,
@@ -322,7 +349,7 @@ export class InvestigationAgent {
             functionResponse: {
               id: call.id,
               name: call.name,
-              response: { result },
+              response: { result: compactToolResult(result) },
             },
           });
         }
@@ -367,10 +394,54 @@ export class InvestigationAgent {
       };
     }
 
-    throw new InvestigationAgentError(
-      "The model did not produce a final investigation report.",
-      "FINAL_RESPONSE_INVALID",
-    );
+    contents.push({
+      parts: [
+        {
+          text: "Stop using tools and return the final investigation JSON now. Use only evidence already retrieved.",
+        },
+      ],
+      role: "user",
+    });
+    const finalResponse = await this.llm.generate({
+      contents,
+      generationConfig: { temperature: 0.1 },
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      toolConfig: { functionCallingConfig: { mode: "NONE" } },
+    });
+    const parsed = finalResponseSchema.safeParse(extractJson(finalResponse.text));
+    if (!parsed.success) {
+      throw new InvestigationAgentError(
+        "The model did not produce a final investigation report.",
+        "FINAL_RESPONSE_INVALID",
+      );
+    }
+    const findings: InvestigationFinding[] = [];
+    for (const finding of parsed.data.findings) {
+      const entity = entities.get(finding.entityId);
+      const paths = evidencePaths.get(finding.entityId) ?? [];
+      if (!entity || paths.length === 0) {
+        throw new InvestigationAgentError(
+          `Finding ${finding.entityId} has no retrieved graph evidence.`,
+          "FINAL_RESPONSE_MISSING_EVIDENCE",
+        );
+      }
+      findings.push({
+        entity,
+        evidencePaths: paths,
+        priority: finding.priority,
+        reason: finding.reason,
+        sourceLocations: sourceLocations.get(finding.entityId) ?? [],
+      });
+    }
+    return {
+      report: {
+        ...parsed.data,
+        findings,
+        uncertainty: [...new Set([...parsed.data.uncertainty, ...toolErrors])],
+      },
+      toolCalls,
+      turns: MAX_AGENT_TURNS + 1,
+    };
   }
 
   private async executeTool(

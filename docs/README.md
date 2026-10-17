@@ -14,7 +14,7 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 - Phase 5 adds worker-owned, parameterized FalkorDB graph loading with idempotent writes, revision replacement, evidence metadata, and counts.
 - Phase 6 adds authenticated backend indexing jobs, progress/status polling, ownership checks, duplicate-request handling, and owned investigation records.
 - Phase 7 adds worker-owned, bounded investigation tools for entity search, dependencies, callers, relationship traversal, evidence paths, source locations, and deterministic ranking.
-- Phase 8 adds a server-only Gemini client, bounded function-calling orchestration, validated tool arguments, evidence-backed reports, structured tool/provider failures, and asynchronous investigation execution. The live provider smoke request is currently subject to a transient Gemini HTTP 503 high-demand response; the automated local contract is verified.
+- Phase 8 adds server-only Gemini/Groq clients, bounded function-calling orchestration, validated tool arguments, evidence-backed reports, structured tool/provider failures, and asynchronous investigation execution. The live Gemini provider is subject to its free-tier quota; the automated local contract is verified.
 - Phase 9 adds the authenticated browser workflow: server-side backend proxy routes, repository indexing and polling, investigation submission and polling, responsive result rendering, graph evidence paths, source locations, checklists, uncertainty, and actionable error states.
 
 ### Phase 2 local authentication setup
@@ -30,9 +30,13 @@ The backend accepts a short-lived frontend identity token on the Phase 6 endpoin
 
 `POST /investigations` creates an authenticated, repository-owned investigation. When a successful indexed revision is available, the backend queues the investigation and runs the Phase 8 agent asynchronously; poll `GET /investigations/:id` for `queued`, `running`, `succeeded`, or `failed` status and the evidence-backed report.
 
+`GET /models` returns the approved models for providers with server-side keys configured. `POST /investigations` accepts an optional `modelId`; the backend validates it against that catalog and records the selected model. If an investigation fails, the frontend keeps the question available so the user can choose another configured model and retry.
+
 ### Phase 8 agent workflow
 
-The backend calls Gemini through a server-only API client configured by `LLM_API_KEY`, `LLM_MODEL`, and `LLM_TIMEOUT_MS` in `backend/.env`. The model may select only the six bounded worker investigation tools. Tool arguments are validated server-side and repository/commit scope is supplied by the backend. Reports are accepted only when substantive findings map to retrieved evidence paths; model-generated paths and source locations are not trusted.
+The backend calls providers through server-only `GEMINI_API_KEY`, `GROQ_API_KEY`, and `LLM_TIMEOUT_MS` values in `backend/.env`. Gemini uses its native REST contract; Groq uses its OpenAI-compatible chat-completions contract. The model may select only the six bounded worker investigation tools. Tool arguments are validated server-side and repository/commit scope is supplied by the backend. Reports are accepted only when substantive findings map to retrieved evidence paths; model-generated paths and source locations are not trusted.
+
+For the free Groq path, use `GROQ_API_KEY` and select `openai/gpt-oss-20b`. For Gemini, use `GEMINI_API_KEY` and select `gemini-3.8-flash`. The application does not immediately retry HTTP 429 quota responses; it surfaces the provider's retry guidance instead. Temporary 5xx failures remain bounded-retryable.
 
 ### Phase 7 investigation tools
 
@@ -61,7 +65,7 @@ A user should be able to submit a public GitHub repository URL and an investigat
 - **Backend:** Node.js + TypeScript, exposed through a small API service.
 - **Graph database:** FalkorDB, run locally with Docker Compose during development.
 - **Code extraction:** First evaluate [FalkorDB CodeGraph](https://github.com/FalkorDB/code-graph). Reuse its extraction logic only after checking current capabilities, license, dependencies, and how it can be integrated. If it does not fit, use Tree-sitter for TypeScript/JavaScript parsing and implement only the missing extraction/mapping logic.
-- **LLM:** A tool-calling model accessed server-side through an API key in environment variables. Keep provider/model configuration out of source code.
+- **LLM:** A tool-calling model accessed server-side through an API key in environment variables. Gemini and Groq's OpenAI-compatible API are supported; keep provider/model configuration out of source code.
 - **Tests:** Automated tests for extraction, graph ingestion/querying, and evidence formatting.
 
 Do not add a vector database, multi-agent framework, or additional services unless a demonstrated MVP requirement justifies them.
