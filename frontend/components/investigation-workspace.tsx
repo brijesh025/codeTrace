@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ActionPlan } from "./action-plan";
 import { EvidenceGraph } from "./evidence-graph";
+import { InvestigationStateBanner } from "./investigation-state";
 
 type IndexStatus = "failed" | "queued" | "running" | "succeeded";
 type InvestigationStatus = "failed" | "pending" | "queued" | "running" | "succeeded";
@@ -86,6 +87,7 @@ interface InvestigationRecord {
       steps: string[];
       title: string;
     }>;
+    status?: "COMPLETED" | "NO_VERIFIED_EVIDENCE";
     summary: string;
     uncertainty: string[];
   };
@@ -507,10 +509,7 @@ function InvestigationResultCard({ investigation }: { investigation: Investigati
       </div>
 
       {investigation.status === "failed" ? (
-        <div className="alert alert-error result-alert">
-          <span>{errorLabel(investigation.error, "The investigation failed.")}</span>
-          <span>Choose another model above and retry.</span>
-        </div>
+        <InvestigationStateBanner input={investigation} />
       ) : null}
 
       {investigation.status === "queued" || investigation.status === "running" ? (
@@ -574,6 +573,7 @@ function TraceContent({ trace }: { trace: TraceStep[] }) {
 function ReportContent({ report }: { report: NonNullable<InvestigationRecord["report"]> }) {
   return (
     <div className="report-content">
+      <InvestigationStateBanner input={{ report, status: "succeeded" }} />
       <div className="summary-block">
         <p className="eyebrow">Summary</p>
         <p className="summary-text">{report.summary}</p>

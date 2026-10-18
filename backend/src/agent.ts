@@ -17,8 +17,8 @@ import type {
 import type { LlmClient, LlmContent, LlmFunctionCall, LlmGenerateRequest } from "./llm.js";
 import { memoryContext, type RepositoryInvestigationMemory } from "./memory.js";
 
-const MAX_AGENT_TURNS = 4;
-const MAX_TOOL_CALLS = 8;
+const MAX_AGENT_TURNS = 6;
+const MAX_TOOL_CALLS = 12;
 const MAX_TOOL_RESULT_CHARS = 12_000;
 
 const toolNameSchema = z.enum([
@@ -30,52 +30,75 @@ const toolNameSchema = z.enum([
   "get_source_locations",
 ]);
 
+function boundedInteger(minimum: number, maximum: number) {
+  return z.preprocess(
+    (value) =>
+      typeof value === "string" && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value,
+    z.number().int().min(minimum).max(maximum),
+  );
+}
+
+const optionalLimit = boundedInteger(1, 50).optional();
+const optionalMaxDepth = boundedInteger(1, 4).optional();
+
 const toolInputSchemas = {
   find_callers: z
     .object({
-      entityId: z.string().min(1).max(300),
-      limit: z.number().int().min(1).max(50).optional(),
-      maxDepth: z.number().int().min(1).max(4).optional(),
+      entityId: z.string().trim().min(1).max(300),
+      limit: optionalLimit,
+      maxDepth: optionalMaxDepth,
     })
     .strict(),
   find_dependencies: z
     .object({
-      entityId: z.string().min(1).max(300),
-      limit: z.number().int().min(1).max(50).optional(),
-      maxDepth: z.number().int().min(1).max(4).optional(),
+      entityId: z.string().trim().min(1).max(300),
+      limit: optionalLimit,
+      maxDepth: optionalMaxDepth,
     })
     .strict(),
   find_entities: z
     .object({
-      limit: z.number().int().min(1).max(50).optional(),
-      query: z.string().min(1).max(200),
+      limit: optionalLimit,
+      query: z.string().trim().min(1).max(200),
     })
     .strict(),
   get_evidence_path: z
     .object({
-      fromEntityId: z.string().min(1).max(300),
-      limit: z.number().int().min(1).max(50).optional(),
-      maxDepth: z.number().int().min(1).max(4).optional(),
-      toEntityId: z.string().min(1).max(300),
+      fromEntityId: z.string().trim().min(1).max(300),
+      limit: optionalLimit,
+      maxDepth: optionalMaxDepth,
+      toEntityId: z.string().trim().min(1).max(300),
     })
     .strict(),
   get_source_locations: z
     .object({
-      entityIds: z.array(z.string().min(1).max(300)).min(1).max(50),
-      limit: z.number().int().min(1).max(50).optional(),
+      entityIds: z.array(z.string().trim().min(1).max(300)).min(1).max(50),
+      limit: optionalLimit,
     })
     .strict(),
   traverse_relationships: z
     .object({
       direction: z.enum(["incoming", "outgoing", "both"]).optional(),
-      entityId: z.string().min(1).max(300),
-      limit: z.number().int().min(1).max(50).optional(),
-      maxDepth: z.number().int().min(1).max(4).optional(),
+      entityId: z.string().trim().min(1).max(300),
+      limit: optionalLimit,
+      maxDepth: optionalMaxDepth,
     })
     .strict(),
 };
 
 type ToolResult = InvestigationResult | EvidencePathResult | SourceLocationResult;
+
+type ToolFailure = {
+  code:
+    | "ENTITY_NOT_FOUND"
+    | "TOOL_ARGUMENTS_INVALID"
+    | "TOOL_EXECUTION_FAILED"
+    | "TOOL_NOT_ALLOWED";
+  error: string;
+  nextStep: string;
+};
+
+type ToolExecutionResult = ToolFailure | ToolResult;
 
 export interface InvestigationAgentInput {
   commitSha: string;
@@ -107,6 +130,7 @@ export interface InvestigationReport {
   checklist: string[];
   findings: InvestigationFinding[];
   actions: InvestigationAction[];
+  status: "COMPLETED" | "NO_VERIFIED_EVIDENCE";
   summary: string;
   uncertainty: string[];
 }
@@ -119,6 +143,8 @@ export interface InvestigationTraceResult {
   pathCount?: number;
   resultCount?: number;
   truncated?: boolean;
+  nextStep?: string;
+  toolErrorCode?: string;
 }
 
 export interface InvestigationTraceStep {
@@ -278,12 +304,14 @@ const SYSTEM_PROMPT = `You are CodeTrace, an evidence-bound codebase investigati
 Use only the declared investigation tools. The repository and commit scope are fixed by the server and must not be requested from the user or changed.
 Never invent entity IDs, paths, line numbers, relationship paths, or confidence values.
 Use tools to retrieve graph evidence before making findings. A substantive finding must use an entity ID returned by a tool and have a retrieved evidence path.
+Before calling a relationship or source-location tool, call find_entities and copy an exact returned entity ID; never pass a natural-language phrase as entityId.
 Prior repository memory is a hint for investigation direction only. It may come from an older commit and is never evidence by itself; verify relevant claims with the current graph tools.
 After gathering enough evidence, respond with JSON only using this shape:
 {"summary":"...","findings":[{"entityId":"...","priority":"high|medium|low","reason":"..."}],"checklist":["..."],"uncertainty":["..."],"actions":[{"kind":"inspect|issue|patch|test","title":"...","rationale":"...","steps":["..."],"entityIds":["..."]}]}
 Do not include evidence paths in your JSON; the server attaches verified evidence to each finding.
 Actions are safe draft proposals only. Never claim to edit files, push code, or create an external issue. Every action must reference one or more entity IDs returned by tools and backed by retrieved evidence paths.
-If graph coverage is insufficient, return no unsupported finding and explain the limitation in uncertainty.`;
+If graph coverage is insufficient, return no unsupported finding and explain the limitation in uncertainty.
+Once you have at least one relationship or evidence path, stop exploring and produce the final JSON. Do not keep requesting tools when the retrieved evidence is enough to support a cautious finding.`;
 
 function extractJson(text: string): unknown {
   const trimmed = text
@@ -306,6 +334,33 @@ function extractJson(text: string): unknown {
       "FINAL_RESPONSE_INVALID",
     );
   }
+}
+
+type ParsedInvestigationReport = z.infer<typeof finalResponseSchema>;
+
+function parseFinalResponse(text: string): ParsedInvestigationReport | undefined {
+  try {
+    const parsed = finalResponseSchema.safeParse(extractJson(text));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function initialDiscoveryContext(result: ToolExecutionResult): string {
+  if ("error" in result) {
+    return `Initial graph discovery failed. Do not invent entity IDs. Error: ${result.error} Next step: ${result.nextStep}`;
+  }
+  if ("results" in result) {
+    const candidates = result.results.slice(0, 12).map((entity) => ({
+      id: entity.id,
+      kind: entity.kind,
+      name: entity.name,
+      path: entity.path,
+    }));
+    return `Initial graph discovery returned these canonical entities. Use these exact IDs for relationship tools: ${JSON.stringify(candidates)}`;
+  }
+  return "Initial graph discovery returned no entity candidates. Call find_entities with a more focused symbol or path term before using relationship tools.";
 }
 
 function contentForModel(response: { content?: LlmContent; text: string }): LlmContent {
@@ -426,7 +481,47 @@ export class InvestigationAgent {
     const toolErrors: string[] = [];
     let toolCalls = 0;
 
+    const initialDiscoveryCall: LlmFunctionCall = {
+      args: { limit: 12, query: input.question },
+      id: "initial-discovery",
+      name: "find_entities",
+    };
+    toolCalls += 1;
+    trace.push({
+      arguments: initialDiscoveryCall.args,
+      id: `trace-${trace.length + 1}`,
+      kind: "tool_call",
+      status: "requested",
+      summary: "CodeTrace performed bounded initial graph discovery.",
+      toolName: initialDiscoveryCall.name,
+      turn: 0,
+    });
+    const initialDiscovery = await this.executeTool(initialDiscoveryCall, input, entities);
+    if ("error" in initialDiscovery) {
+      toolErrors.push(initialDiscovery.error);
+    } else {
+      this.catalogResult(initialDiscovery, entities, evidencePaths, sourceLocations);
+    }
+    trace.push({
+      id: `trace-${trace.length + 1}`,
+      kind: "tool_result",
+      result: summarizeToolResult(initialDiscovery),
+      status: "error" in initialDiscovery ? "failed" : "succeeded",
+      summary:
+        "error" in initialDiscovery
+          ? `Initial graph discovery failed: ${initialDiscovery.error}`
+          : summarizeToolResultText("find_entities", initialDiscovery),
+      toolName: initialDiscoveryCall.name,
+      turn: 0,
+    });
+    contents.push({
+      parts: [{ text: initialDiscoveryContext(initialDiscovery) }],
+      role: "user",
+    });
+
+    let lastTurn = 0;
     for (let turn = 1; turn <= MAX_AGENT_TURNS; turn += 1) {
+      lastTurn = turn;
       const response = await this.llm.generate({
         contents,
         generationConfig: { temperature: 0.1 },
@@ -456,7 +551,7 @@ export class InvestigationAgent {
             toolName: call.name,
             turn,
           });
-          const result = await this.executeTool(call, input);
+          const result = await this.executeTool(call, input, entities);
           if ("error" in result) {
             toolErrors.push(result.error);
           } else {
@@ -483,55 +578,34 @@ export class InvestigationAgent {
           });
         }
         contents.push({ parts: functionResponses, role: "user" });
+        if (evidencePaths.size > 0) {
+          break;
+        }
         continue;
       }
 
-      const parsed = finalResponseSchema.safeParse(extractJson(response.text));
-      if (!parsed.success) {
-        throw new InvestigationAgentError(
-          "The model report failed final schema validation.",
-          "FINAL_RESPONSE_INVALID",
-        );
-      }
-      const findings: InvestigationFinding[] = [];
-      for (const finding of parsed.data.findings) {
-        const entity = entities.get(finding.entityId);
-        const paths = evidencePaths.get(finding.entityId) ?? [];
-        if (!entity || paths.length === 0) {
-          throw new InvestigationAgentError(
-            `Finding ${finding.entityId} has no retrieved graph evidence.`,
-            "FINAL_RESPONSE_MISSING_EVIDENCE",
-          );
-        }
-        findings.push({
-          entity,
-          evidencePaths: paths,
-          priority: finding.priority,
-          reason: finding.reason,
-          sourceLocations: sourceLocations.get(finding.entityId) ?? [],
+      const parsed = parseFinalResponse(response.text);
+      if (!parsed) {
+        trace.push({
+          id: `trace-${trace.length + 1}`,
+          kind: "final",
+          result: { error: "The model report failed final schema validation." },
+          status: "failed",
+          summary: "The provider returned an invalid final report; finalization recovery will run.",
+          turn,
         });
+        break;
       }
-
-      const validatedActions = validateActions(parsed.data.actions, entities, evidencePaths);
-      const uncertainty = [...parsed.data.uncertainty, ...validatedActions.warnings];
-      if (toolErrors.length > 0) {
-        uncertainty.push(`Some investigation tools failed: ${toolErrors.join("; ")}`);
-      }
-      const report = {
-        ...parsed.data,
-        actions: validatedActions.actions,
-        findings,
-        uncertainty: [...new Set(uncertainty)],
-      };
+      const report = this.buildReport(parsed, entities, evidencePaths, sourceLocations, toolErrors);
       trace.push({
         id: `trace-${trace.length + 1}`,
         kind: "final",
         result: {
-          findingEntityIds: findings.map((finding) => finding.entity.id),
-          resultCount: findings.length,
+          findingEntityIds: report.findings.map((finding) => finding.entity.id),
+          resultCount: report.findings.length,
         },
         status: "validated",
-        summary: `Validated ${findings.length} finding${findings.length === 1 ? "" : "s"} against retrieved graph evidence.`,
+        summary: `Validated ${report.findings.length} finding${report.findings.length === 1 ? "" : "s"} against retrieved graph evidence.`,
         turn,
       });
       return { report, trace, toolCalls, turns: turn };
@@ -545,21 +619,82 @@ export class InvestigationAgent {
       ],
       role: "user",
     });
-    const finalResponse = await this.llm.generate({
+    const finalRequest = {
       contents,
       generationConfig: { temperature: 0.1 },
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      toolConfig: { functionCallingConfig: { mode: "NONE" } },
-    });
-    const parsed = finalResponseSchema.safeParse(extractJson(finalResponse.text));
-    if (!parsed.success) {
+      toolConfig: { functionCallingConfig: { mode: "NONE" as const } },
+    };
+    let finalResponse = await this.llm.generate(finalRequest);
+    contents.push(contentForModel(finalResponse));
+    let parsed = parseFinalResponse(finalResponse.text);
+    if (!parsed) {
+      trace.push({
+        id: `trace-${trace.length + 1}`,
+        kind: "final",
+        result: { error: "The provider returned invalid final JSON." },
+        status: "failed",
+        summary: "The provider returned invalid final JSON; retrying finalization once.",
+        turn: lastTurn + 1,
+      });
+      contents.push({
+        parts: [
+          {
+            text: "The previous response was not a valid investigation JSON object. Return only valid JSON matching the required schema, with no tool calls.",
+          },
+        ],
+        role: "user",
+      });
+      finalResponse = await this.llm.generate({ ...finalRequest, contents });
+      contents.push(contentForModel(finalResponse));
+      parsed = parseFinalResponse(finalResponse.text);
+      if (!parsed) {
+        trace.push({
+          id: `trace-${trace.length + 1}`,
+          kind: "final",
+          result: { error: "The finalization recovery response was also invalid." },
+          status: "failed",
+          summary:
+            "The finalization recovery response was also invalid; returning a bounded result.",
+          turn: lastTurn + 2,
+        });
+      }
+    }
+
+    if (!parsed) {
+      if (evidencePaths.size === 0) {
+        return this.noVerifiedEvidenceResult(trace, entities, toolCalls, toolErrors, lastTurn + 2);
+      }
       throw new InvestigationAgentError(
-        "The model did not produce a final investigation report.",
+        "The provider did not produce a valid final investigation report after one recovery retry.",
         "FINAL_RESPONSE_INVALID",
       );
     }
+
+    const report = this.buildReport(parsed, entities, evidencePaths, sourceLocations, toolErrors);
+    trace.push({
+      id: `trace-${trace.length + 1}`,
+      kind: "final",
+      result: {
+        findingEntityIds: report.findings.map((finding) => finding.entity.id),
+        resultCount: report.findings.length,
+      },
+      status: "validated",
+      summary: `Validated ${report.findings.length} finding${report.findings.length === 1 ? "" : "s"} after bounded finalization.`,
+      turn: lastTurn + 1,
+    });
+    return { report, trace, toolCalls, turns: lastTurn + 1 };
+  }
+
+  private buildReport(
+    parsed: ParsedInvestigationReport,
+    entities: Map<string, InvestigationEntity>,
+    evidencePaths: Map<string, InvestigationResult["results"][number]["evidencePaths"]>,
+    sourceLocations: Map<string, InvestigationEntity[]>,
+    toolErrors: string[],
+  ): InvestigationReport {
     const findings: InvestigationFinding[] = [];
-    for (const finding of parsed.data.findings) {
+    for (const finding of parsed.findings) {
       const entity = entities.get(finding.entityId);
       const paths = evidencePaths.get(finding.entityId) ?? [];
       if (!entity || paths.length === 0) {
@@ -576,41 +711,103 @@ export class InvestigationAgent {
         sourceLocations: sourceLocations.get(finding.entityId) ?? [],
       });
     }
-    const validatedActions = validateActions(parsed.data.actions, entities, evidencePaths);
-    const report = {
-      ...parsed.data,
+
+    const validatedActions = validateActions(parsed.actions, entities, evidencePaths);
+    const uncertainty = [...parsed.uncertainty, ...validatedActions.warnings];
+    if (toolErrors.length > 0) {
+      uncertainty.push(`Some investigation tools failed: ${toolErrors.join("; ")}`);
+    }
+    if (findings.length === 0 && evidencePaths.size === 0) {
+      uncertainty.push("NO_VERIFIED_EVIDENCE: No verified relationship path was retrieved.");
+    }
+
+    return {
+      ...parsed,
       actions: validatedActions.actions,
       findings,
+      status:
+        findings.length === 0 && evidencePaths.size === 0 ? "NO_VERIFIED_EVIDENCE" : "COMPLETED",
+      uncertainty: [...new Set(uncertainty)],
+    };
+  }
+
+  private noVerifiedEvidenceResult(
+    trace: InvestigationTraceStep[],
+    entities: Map<string, InvestigationEntity>,
+    toolCalls: number,
+    toolErrors: string[],
+    turns: number,
+  ): InvestigationAgentResult {
+    const noMatches = entities.size === 0;
+    const report: InvestigationReport = {
+      actions: [],
+      checklist: [
+        noMatches
+          ? "Try a concrete function, class, module, or file name from the repository."
+          : "Ask about a relationship between the discovered entities.",
+      ],
+      findings: [],
+      status: "NO_VERIFIED_EVIDENCE",
+      summary: noMatches
+        ? "No matching graph entities were found for this question."
+        : "The graph did not provide a verified relationship path for this question.",
       uncertainty: [
-        ...new Set([...parsed.data.uncertainty, ...validatedActions.warnings, ...toolErrors]),
+        noMatches
+          ? "NO_VERIFIED_EVIDENCE: No matching graph entities were found for this question."
+          : "NO_VERIFIED_EVIDENCE: Entities were found, but no verified relationship path was retrieved.",
+        ...toolErrors.map((error) => `Some investigation tools failed: ${error}`),
       ],
     };
     trace.push({
       id: `trace-${trace.length + 1}`,
       kind: "final",
-      result: {
-        findingEntityIds: findings.map((finding) => finding.entity.id),
-        resultCount: findings.length,
-      },
+      result: { findingEntityIds: [], resultCount: 0 },
       status: "validated",
-      summary: `Validated ${findings.length} finding${findings.length === 1 ? "" : "s"} after the tool-call limit was reached.`,
-      turn: MAX_AGENT_TURNS + 1,
+      summary: "Returned a structured NO_VERIFIED_EVIDENCE result.",
+      turn: turns,
     });
-    return { report, trace, toolCalls, turns: MAX_AGENT_TURNS + 1 };
+    return { report, trace, toolCalls, turns };
   }
 
   private async executeTool(
     call: LlmFunctionCall,
     input: InvestigationAgentInput,
-  ): Promise<ToolResult | { error: string }> {
+    knownEntities: Map<string, InvestigationEntity>,
+  ): Promise<ToolExecutionResult> {
     const parsedName = toolNameSchema.safeParse(call.name);
     if (!parsedName.success) {
-      return { error: `Tool ${call.name} is not allowed.` };
+      return {
+        code: "TOOL_NOT_ALLOWED",
+        error: `Tool ${call.name} is not allowed.`,
+        nextStep: "Use only the declared graph tools.",
+      };
     }
     const name = parsedName.data;
     const parsedArguments = toolInputSchemas[name].safeParse(call.args);
     if (!parsedArguments.success) {
-      return { error: `Invalid arguments for ${name}.` };
+      return {
+        code: "TOOL_ARGUMENTS_INVALID",
+        error: `Invalid arguments for ${name}.`,
+        nextStep: `Retry ${name} with the declared argument types and bounded values.`,
+      };
+    }
+
+    const args = parsedArguments.data as Record<string, unknown>;
+    const entityIds = [
+      ...(typeof args.entityId === "string" ? [args.entityId] : []),
+      ...(typeof args.fromEntityId === "string" ? [args.fromEntityId] : []),
+      ...(typeof args.toEntityId === "string" ? [args.toEntityId] : []),
+      ...(Array.isArray(args.entityIds)
+        ? args.entityIds.filter((entityId): entityId is string => typeof entityId === "string")
+        : []),
+    ];
+    const unknownEntityId = entityIds.find((entityId) => !knownEntities.has(entityId));
+    if (unknownEntityId) {
+      return {
+        code: "ENTITY_NOT_FOUND",
+        error: `Unknown entity ID "${unknownEntityId}" for ${name}.`,
+        nextStep: "Call find_entities first, then use an exact entity ID returned by that tool.",
+      };
     }
 
     try {
@@ -648,7 +845,11 @@ export class InvestigationAgent {
           } as SourceLocationInput);
       }
     } catch (error) {
-      return { error: error instanceof Error ? error.message : `Tool ${name} failed.` };
+      return {
+        code: "TOOL_EXECUTION_FAILED",
+        error: error instanceof Error ? error.message : `Tool ${name} failed.`,
+        nextStep: `Retry ${name} only after correcting the reported tool failure.`,
+      };
     }
   }
 
@@ -687,9 +888,9 @@ export class InvestigationAgent {
   }
 }
 
-function summarizeToolResult(result: ToolResult | { error: string }): InvestigationTraceResult {
+function summarizeToolResult(result: ToolExecutionResult): InvestigationTraceResult {
   if ("error" in result) {
-    return { error: result.error };
+    return { error: result.error, nextStep: result.nextStep, toolErrorCode: result.code };
   }
   if ("results" in result) {
     return {
@@ -725,7 +926,10 @@ function traceArguments(args: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
-function summarizeToolResultText(toolName: string, result: ToolResult): string {
+function summarizeToolResultText(toolName: string, result: ToolExecutionResult): string {
+  if ("error" in result) {
+    return `${toolName} failed: ${result.error} Next: ${result.nextStep}`;
+  }
   const summary = summarizeToolResult(result);
   if (summary.resultCount !== undefined) {
     return `${toolName} returned ${summary.resultCount} graph result${summary.resultCount === 1 ? "" : "s"}.`;

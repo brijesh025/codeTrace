@@ -93,7 +93,12 @@ export class ModelRegistry {
     }
 
     if (model.provider === "gemini") {
-      return createGeminiClient({ apiKey, model: model.id, timeoutMs: this.config.LLM_TIMEOUT_MS });
+      return createGeminiClient({
+        apiKey,
+        jsonMode: true,
+        model: model.id,
+        timeoutMs: this.config.LLM_TIMEOUT_MS,
+      });
     }
 
     const baseUrl =
@@ -103,7 +108,7 @@ export class ModelRegistry {
     return createOpenAiCompatibleClient({
       apiKey,
       baseUrl,
-      jsonMode: model.provider === "cloudflare",
+      jsonMode: true,
       model: model.provider === "cloudflare" ? this.config.CLOUDFLARE_MODEL : model.id,
       timeoutMs: this.config.LLM_TIMEOUT_MS,
     });

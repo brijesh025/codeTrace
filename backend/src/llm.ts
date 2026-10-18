@@ -12,6 +12,7 @@ export interface LlmFunctionCall {
 export interface LlmGenerateRequest {
   contents: LlmContent[];
   generationConfig?: {
+    responseMimeType?: string;
     temperature?: number;
   };
   systemInstruction?: {
@@ -48,6 +49,7 @@ export class LlmClientError extends Error {
     public readonly code:
       | "LLM_BAD_RESPONSE"
       | "LLM_CONFIGURATION"
+      | "LLM_QUOTA_EXCEEDED"
       | "LLM_REQUEST_FAILED"
       | "LLM_TIMEOUT",
     public readonly status?: number,
@@ -61,6 +63,7 @@ export class LlmClientError extends Error {
 export interface GeminiClientOptions {
   apiKey?: string;
   fetchImpl?: typeof fetch;
+  jsonMode?: boolean;
   maxRetries?: number;
   model?: string;
   retryDelayMs?: number;
@@ -166,6 +169,13 @@ function retryAfterMilliseconds(response: Response, message: string): number | u
   return bodyMatch?.[1] ? Math.max(0, Math.round(Number(bodyMatch[1]) * 1_000)) : undefined;
 }
 
+function isQuotaError(status: number, message: string): boolean {
+  return (
+    status === 429 ||
+    /quota|rate[ -]?limit|too many requests|tokens per minute|\btpm\b/i.test(message)
+  );
+}
+
 async function responsePayload(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -177,6 +187,7 @@ async function responsePayload(response: Response): Promise<unknown> {
 export function createGeminiClient({
   apiKey,
   fetchImpl = fetch,
+  jsonMode = false,
   maxRetries = 2,
   model = "gemini-3.8-flash",
   retryDelayMs = 250,
@@ -201,7 +212,17 @@ export function createGeminiClient({
           const response = await fetchImpl(
             `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(normalizedModel)}:generateContent`,
             {
-              body: JSON.stringify(request),
+              body: JSON.stringify({
+                ...request,
+                ...(jsonMode && request.toolConfig?.functionCallingConfig.mode === "NONE"
+                  ? {
+                      generationConfig: {
+                        ...request.generationConfig,
+                        responseMimeType: "application/json",
+                      },
+                    }
+                  : {}),
+              }),
               headers: {
                 "content-type": "application/json",
                 "x-goog-api-key": apiKey,
@@ -216,7 +237,7 @@ export function createGeminiClient({
             const message = providerMessage(payload, response.status);
             const providerError = new LlmClientError(
               message,
-              "LLM_REQUEST_FAILED",
+              isQuotaError(response.status, message) ? "LLM_QUOTA_EXCEEDED" : "LLM_REQUEST_FAILED",
               response.status,
               retryAfterMilliseconds(response, message),
             );
@@ -454,7 +475,7 @@ export function createOpenAiCompatibleClient({
             const message = providerMessage(payload, response.status);
             throw new LlmClientError(
               message,
-              "LLM_REQUEST_FAILED",
+              isQuotaError(response.status, message) ? "LLM_QUOTA_EXCEEDED" : "LLM_REQUEST_FAILED",
               response.status,
               retryAfterMilliseconds(response, message),
             );

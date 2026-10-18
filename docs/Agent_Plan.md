@@ -559,6 +559,118 @@ Update `README.md` with:
 
 The implementation is not considered MVP-complete until another developer can run the full local flow from a clean checkout.
 
+## Phase 12 — Final investigation reliability and provider compatibility
+
+Status: in progress. Phases 12.1 through 12.6 are complete and verified; the remaining deployment safeguards are still planned.
+
+### Goal
+
+Make ordinary natural-language questions produce a valid, evidence-backed investigation result across the configured LLM providers. The user experience must distinguish between no matching code, insufficient graph relationships, provider-format failures, and provider quota failures.
+
+### Confirmed failure modes
+
+The current trace identifies four issues that can combine into the same user-facing error:
+
+1. `find_entities` performs full-phrase matching, so questions such as `authentication using google fails` can return zero entities even when related files exist.
+2. Some OpenAI-compatible model responses serialize bounded numeric arguments as strings, while the backend currently accepts only numbers.
+3. The model can pass a natural-language phrase as `entityId` instead of an ID previously returned by `find_entities`.
+4. After tool exploration, the forced final request can return empty or non-JSON content, producing `FINAL_RESPONSE_INVALID` instead of a useful structured limitation.
+
+Cloudflare documents the selected Llama 3.3 model as supporting function calling and JSON mode, but also states that JSON-schema compliance is not guaranteed for every response. Groq's local tool-calling guidance places tool execution, argument validation, loop control, and finalization responsibility in the application.
+
+### Work plan
+
+#### 12.1 Reproduction and provider contract fixtures
+
+Status: complete and verified. Deterministic fixtures reproduce zero-result discovery, malformed numeric arguments, invalid entity IDs, repeated tool calls, and malformed forced-final responses.
+
+- Add deterministic agent fixtures for zero-result searches, stringified numeric arguments, invalid entity IDs, repeated tool calls, and malformed final responses.
+- Add mocked Cloudflare, Groq, and Gemini response sequences covering assistant tool calls, tool results, and final JSON.
+- Preserve the full trace for each failure so provider behavior and graph behavior can be separated.
+
+#### 12.2 Natural-language graph discovery
+
+Status: complete and verified. `find_entities` now performs bounded token-aware matching with stopword filtering, preserves phrase matching, and ranks candidates by meaningful term coverage.
+
+- Normalize investigation questions into meaningful search terms.
+- Ignore common stopwords and search terms independently rather than requiring one full phrase to match a path or symbol.
+- Rank exact symbol/path matches above partial matches.
+- Return a bounded candidate list with canonical entity IDs, names, paths, and kinds.
+- Keep all graph queries parameterized and bounded.
+
+#### 12.3 Safe tool-argument normalization
+
+Status: complete and verified. Bounded numeric strings are normalized, invalid values remain rejected, and relationship/source tools require canonical entity IDs already returned by graph discovery.
+
+- Coerce only bounded numeric fields such as `limit` and `maxDepth`.
+- Reject invalid or unknown entity IDs before relationship traversal.
+- Tell the model to use only IDs returned by graph tools.
+- Return structured tool errors that explain the next valid tool call instead of consuming a turn with an opaque validation failure.
+- Keep malformed arguments in the trace for debugging, without executing unsafe input.
+
+#### 12.4 Deterministic agent orchestration
+
+Status: complete and verified. Investigations now begin with bounded entity discovery, expose canonical IDs to the model, stop exploration after verified evidence, retry invalid finalization once, and return structured `NO_VERIFIED_EVIDENCE` output when recovery is exhausted without graph paths.
+
+- Run an initial bounded entity-discovery step before relationship reasoning.
+- Give the model the discovered candidate IDs explicitly.
+- Stop requesting more tools once a relevant relationship/evidence path has been retrieved.
+- Keep hard maximums on turns, tool calls, result size, and total request time.
+- Use one controlled finalization retry when a provider ignores `tool_choice: none` or returns invalid JSON.
+- Return a structured `NO_VERIFIED_EVIDENCE` result when no path exists instead of a generic final-response failure.
+
+#### 12.5 Provider-specific structured output handling
+
+Status: complete and verified. Cloudflare and Groq use OpenAI-compatible JSON mode only during finalization, Gemini uses `responseMimeType: application/json`, and quota responses are classified separately from general provider failures.
+
+- Keep a common internal LLM contract, but make each adapter responsible for its provider's message format.
+- Use JSON mode or JSON schema only on finalization requests where supported.
+- Validate every parsed final report with the existing Zod schema.
+- Classify errors separately as provider quota, provider request failure, malformed tool call, invalid final response, and no graph evidence.
+- Do not add a provider or model to the UI unless its tool-calling and final JSON contract passes the fixture suite.
+
+#### 12.6 Frontend result and failure states
+
+Status: complete and verified. The frontend now distinguishes no matching entities, no verified relationship paths, provider response-format failures, quota failures, in-progress work, and evidence-backed results with actionable, provider-specific guidance.
+
+- Show `No matching entities` when discovery returns no candidates.
+- Show `No verified relationship path` when entities exist but traversal finds no path.
+- Show `Provider response format failed` when final JSON cannot be recovered.
+- Show quota/rate-limit guidance only for actual provider limit responses.
+- Keep the evidence graph empty only for a genuinely path-free report.
+
+#### 12.7 Free-tier and Render safeguards
+
+- Keep repository size, file count, extraction depth, tool result size, and request timeout bounded.
+- Allow only one active indexing/investigation execution per backend instance for the free deployment.
+- Avoid unbounded retries and never retry provider quota errors automatically.
+- Make finalization recovery at most one additional LLM request.
+- Keep graph traversal bounded and avoid all-pairs graph queries.
+- Persist job state in FalkorDB, while marking interrupted in-process jobs as retryable failures after a restart.
+- Test with small and medium repositories before attempting large repositories on a free instance.
+
+### Exit criteria
+
+- A focused symbol question returns at least one verified finding and evidence graph when the graph contains a path.
+- A natural-language question can discover relevant symbols without requiring the full sentence to match a path.
+- Stringified numeric tool arguments no longer cause avoidable validation failures.
+- Invalid model entity IDs are rejected with an actionable tool result.
+- Malformed final responses are retried once and then classified clearly.
+- No quota error is mislabeled as graph insufficiency, and no graph insufficiency is mislabeled as a provider failure.
+- Cloudflare, Groq, and Gemini fixture tests pass.
+- Local end-to-end tests pass against FalkorDB for at least one repository in each supported language family.
+- Render free-tier deployment remains bounded by explicit timeouts and workload limits.
+
+### Final development definition of done
+
+CodeTrace is ready for deployment polishing when a user can ask a focused or natural-language repository question and receive one of these honest outcomes:
+
+1. A ranked, evidence-backed answer with an interactive graph.
+2. A clear no-match/no-path explanation with the relevant trace.
+3. A provider-specific actionable error for quota, availability, or malformed output.
+
+The final phase does not add automatic code edits, issue creation, pull requests, vector search, or a separate queue service.
+
 ## MVP acceptance checklist
 
 - [ ] User can authenticate with GitHub.

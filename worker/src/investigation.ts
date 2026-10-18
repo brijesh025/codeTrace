@@ -6,6 +6,39 @@ const MAX_LIMIT = 50;
 const DEFAULT_DEPTH = 2;
 const MAX_DEPTH = 4;
 const MAX_PATHS_PER_ENTITY = 3;
+const MAX_SEARCH_TERMS = 12;
+
+const SEARCH_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "be",
+  "by",
+  "can",
+  "does",
+  "for",
+  "from",
+  "how",
+  "if",
+  "in",
+  "is",
+  "it",
+  "of",
+  "on",
+  "or",
+  "the",
+  "this",
+  "to",
+  "using",
+  "what",
+  "when",
+  "where",
+  "which",
+  "why",
+  "with",
+  "would",
+]);
 
 const ENTITY_KINDS = new Set<ExtractionEntityKind>([
   "Class",
@@ -223,6 +256,26 @@ function relationshipPredicate(kinds: InvestigationRelationshipKind[]): string {
   return kinds.map((kind) => `type(r) = '${kind}'`).join(" OR ");
 }
 
+function searchTerms(query: string): string[] {
+  return [
+    ...new Set(
+      query
+        .toLowerCase()
+        .match(/[a-z0-9]+/g)
+        ?.filter((term) => term.length > 1 && !SEARCH_STOPWORDS.has(term)) ?? [],
+    ),
+  ].slice(0, MAX_SEARCH_TERMS);
+}
+
+function searchMatchScore(entity: InvestigationEntity, query?: string): number {
+  const terms = query ? searchTerms(query) : [];
+  if (terms.length === 0) {
+    return 0;
+  }
+  const searchableText = `${entity.name} ${entity.path}`.toLowerCase();
+  return terms.filter((term) => searchableText.includes(term)).length / terms.length;
+}
+
 function entityProjection(alias: string, prefix: string): string {
   return `
     ${alias}.id AS ${prefix}Id,
@@ -289,6 +342,7 @@ function rankCandidates(candidates: Candidate[], query?: string): RankedEntity[]
   const ranked = candidates.map(({ entity, paths }) => {
     const exactEntityMatch =
       normalizedQuery && entity.name.toLowerCase() === normalizedQuery ? 1 : 0;
+    const searchMatch = searchMatchScore(entity, query);
     const directEvidence = paths.some((path) => path.distance === 1) ? 1 : 0;
     const shortestDistance = paths.length > 0 ? Math.min(...paths.map((path) => path.distance)) : 0;
     const relationshipDistance = shortestDistance > 0 ? 1 / shortestDistance : 0;
@@ -298,6 +352,7 @@ function rankCandidates(candidates: Candidate[], query?: string): RankedEntity[]
     const score = Number(
       (
         exactEntityMatch * 5 +
+        searchMatch * 4 +
         directEvidence * 3 +
         relationshipDistance * 2 +
         independentPaths +
@@ -346,15 +401,35 @@ export class InvestigationTools {
       throw new InvestigationToolError("query must be between 1 and 200 characters.");
     }
 
+    const terms = searchTerms(query);
+    const termPredicates = terms.flatMap((_, index) => [
+      `toLower(n.name) CONTAINS toLower($term${index})`,
+      `toLower(n.path) CONTAINS toLower($term${index})`,
+    ]);
+    const searchPredicate = [
+      "toLower(n.name) CONTAINS toLower($query)",
+      "toLower(n.path) CONTAINS toLower($query)",
+      ...(termPredicates.length > 0 ? [`(${termPredicates.join(" OR ")})`] : []),
+    ].join(" OR ");
+    const parameters: Record<string, string | number | boolean> = {
+      commitSha: scope.commitSha,
+      limit,
+      query,
+      repositoryId: scope.repositoryId,
+    };
+    terms.forEach((term, index) => {
+      parameters[`term${index}`] = term;
+    });
+
     const result = await this.graph.query(
       `MATCH (n)
        WHERE n.repositoryId = $repositoryId
          AND n.commitSha = $commitSha
-         AND (toLower(n.name) CONTAINS toLower($query) OR toLower(n.path) CONTAINS toLower($query))
+         AND (${searchPredicate})
        RETURN ${entityProjection("n", "")}
        ORDER BY n.id
        LIMIT $limit`,
-      { commitSha: scope.commitSha, limit, query, repositoryId: scope.repositoryId },
+      parameters,
     );
     const candidates = result.rows.map((row) => ({
       entity: entityFromRow(rowRecord(result, row)),

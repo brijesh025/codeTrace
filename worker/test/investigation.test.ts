@@ -107,6 +107,10 @@ class FakeGraph implements GraphQueryClient {
     ["dependency", entity("dependency", "helper", "Function")],
     ["leaf", entity("leaf", "leaf", "Function")],
     ["caller", entity("caller", "caller", "Function")],
+    [
+      "authentication",
+      entity("authentication", "googleAuthentication", "Function", "src/authentication/google.ts"),
+    ],
   ]);
 
   private getEntity(id: string): InvestigationEntity {
@@ -124,6 +128,12 @@ class FakeGraph implements GraphQueryClient {
     this.queries.push({ parameters, query });
 
     if (query.includes("CONTAINS toLower")) {
+      if (parameters.query === "authentication using google fails" && query.includes("$term0")) {
+        return {
+          columns: entityColumns,
+          rows: [entityRow(this.getEntity("authentication"))],
+        };
+      }
       return {
         columns: entityColumns,
         rows: [entityRow(this.getEntity("dependency")), entityRow(this.getEntity("root"))],
@@ -180,6 +190,26 @@ describe("InvestigationTools", () => {
     expect(result.results[0]?.ranking.exactEntityMatch).toBe(1);
     expect(graph.queries[0]?.parameters).toMatchObject({ limit: 10, query: "run" });
     expect(graph.queries[0]?.query).toContain("LIMIT $limit");
+  });
+
+  it("finds entities from meaningful terms in a natural-language question", async () => {
+    const graph = new FakeGraph();
+    const tools = new InvestigationTools(graph);
+
+    const result = await tools.find_entities({
+      ...scope,
+      query: "authentication using google fails",
+      limit: 10,
+    });
+
+    expect(result.results[0]?.id).toBe("authentication");
+    expect(graph.queries[0]?.parameters).toMatchObject({
+      query: "authentication using google fails",
+      term0: "authentication",
+      term1: "google",
+      term2: "fails",
+    });
+    expect(graph.queries[0]?.query).toContain("$term0");
   });
 
   it("returns bounded dependency and caller evidence paths", async () => {

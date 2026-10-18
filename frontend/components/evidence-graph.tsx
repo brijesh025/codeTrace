@@ -64,8 +64,11 @@ export function EvidenceGraph({ findings }: { findings: GraphFinding[] }) {
       >
         <div>
           <p className="eyebrow">Evidence graph</p>
-          <h3 id="evidence-graph-title">No supported path to visualize yet.</h3>
-          <p>Run a focused question that returns at least one graph-backed finding.</p>
+          <h3 id="evidence-graph-title">No verified path to visualize.</h3>
+          <p>
+            CodeTrace only draws paths retrieved from FalkorDB. Refine the question with a concrete
+            symbol, file, or relationship to discover one.
+          </p>
         </div>
       </section>
     );

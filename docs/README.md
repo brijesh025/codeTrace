@@ -76,6 +76,7 @@ Another developer should be able to clone the repository, install Node/pnpm depe
 - Phase 9.5 expands Tree-sitter extraction to Python, Java, C, C++, and Go while preserving the same normalized graph and investigation contracts.
 - Phase 10 validation is complete: the automated suite passes 45 tests across the frontend, backend, and worker, and the live GitHub OAuth flow has been manually verified. Provider-backed investigation/API quota issues remain intentionally deferred.
 - Phase 11 documentation and handoff are complete: setup, environment contracts, verification commands, supported languages, limits, troubleshooting, and clean-checkout instructions are documented below.
+- Phase 12 is the final planned development phase: provider-compatible tool orchestration, natural-language graph discovery, reliable final JSON recovery, honest failure states, and free-tier workload safeguards.
 
 ### Phase 2 local authentication setup
 

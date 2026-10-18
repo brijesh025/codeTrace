@@ -143,7 +143,10 @@ function fakeTools(): Pick<
     find_callers: async (input: CallerInput) => ({ ...rankedResult(), scope: input }),
     find_dependencies: async (input: DependencyInput) => ({ ...rankedResult(), scope: input }),
     find_entities: async (input: FindEntitiesInput) => ({
-      results: [{ ...root, evidencePaths: [], ranking: initialResult.ranking, score: 2 }],
+      results: [
+        { ...root, evidencePaths: [], ranking: initialResult.ranking, score: 2 },
+        { ...affected, evidencePaths: [], ranking: initialResult.ranking, score: 1 },
+      ],
       scope: input,
       truncated: false,
     }),
@@ -166,9 +169,8 @@ function fakeTools(): Pick<
 describe("InvestigationAgent", () => {
   it("executes only declared tools and attaches verified evidence to the final report", async () => {
     const llm = new FakeLlm([
-      functionCall("find_entities", { query: "run" }, "call-1"),
+      functionCall("get_source_locations", { entityIds: ["entity-affected"] }, "call-1"),
       functionCall("find_dependencies", { entityId: "entity-root", maxDepth: 2 }, "call-2"),
-      functionCall("get_source_locations", { entityIds: ["entity-affected"] }, "call-3"),
       finalResponse({
         checklist: ["Inspect the consumer before changing run."],
         findings: [
@@ -192,7 +194,7 @@ describe("InvestigationAgent", () => {
     const result = await agent.run({ ...scope, question: "What could break if run changes?" });
 
     expect(result.toolCalls).toBe(3);
-    expect(result.turns).toBe(4);
+    expect(result.turns).toBe(3);
     expect(result.trace.map((step) => step.kind)).toEqual([
       "question",
       "tool_call",
@@ -205,14 +207,14 @@ describe("InvestigationAgent", () => {
     ]);
     expect(result.trace[2]).toEqual(
       expect.objectContaining({
-        result: expect.objectContaining({ resultCount: 1 }),
+        result: expect.objectContaining({ resultCount: 2 }),
         status: "succeeded",
         toolName: "find_entities",
       }),
     );
     expect(result.report.findings[0]).toEqual(
       expect.objectContaining({
-        entity: affected,
+        entity: expect.objectContaining({ id: affected.id, name: affected.name }),
         evidencePaths: [evidencePath],
         sourceLocations: [affected],
       }),
@@ -225,13 +227,35 @@ describe("InvestigationAgent", () => {
       }),
     ]);
     expect(
-      llm.requests[1]?.contents.some((content) =>
+      llm.requests[0]?.contents.some((content) =>
         content.parts.some((part) => "functionResponse" in part),
       ),
     ).toBe(true);
     expect(llm.requests[0]?.tools?.[0]?.functionDeclarations.map(({ name }) => name)).toContain(
       "get_evidence_path",
     );
+  });
+
+  it("stops requesting tools after verified evidence is retrieved", async () => {
+    const llm = new FakeLlm([
+      functionCall("find_dependencies", { entityId: "entity-root", maxDepth: 2 }, "call-1"),
+      finalResponse({
+        checklist: ["Inspect the consumer."],
+        findings: [
+          { entityId: "entity-affected", priority: "medium", reason: "It has verified paths." },
+        ],
+        summary: "The consumer is supported by retrieved paths.",
+        uncertainty: [],
+      }),
+    ]);
+    const agent = new InvestigationAgent(llm, fakeTools());
+
+    const result = await agent.run({ ...scope, question: "Trace the affected consumer." });
+
+    expect(result.turns).toBe(2);
+    expect(result.toolCalls).toBe(2);
+    expect(result.report.findings).toHaveLength(1);
+    expect(result.report.findings[0]?.entity.id).toBe("entity-affected");
   });
 
   it("rejects a model finding that has no retrieved evidence", async () => {
