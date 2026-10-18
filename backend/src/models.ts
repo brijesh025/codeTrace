@@ -1,7 +1,7 @@
 import type { BackendConfig } from "./config.js";
 import { createGeminiClient, createOpenAiCompatibleClient, type LlmClient } from "./llm.js";
 
-export type LlmProvider = "gemini" | "groq";
+export type LlmProvider = "gemini" | "groq" | "cloudflare";
 
 export interface AvailableModel {
   description: string;
@@ -12,6 +12,13 @@ export interface AvailableModel {
 }
 
 const modelCatalog: AvailableModel[] = [
+  {
+    description: "GPT-OSS through Cloudflare with JSON and tool calling.",
+    id: "@cf/openai/gpt-oss-20b",
+    label: "GPT-OSS 20B · Cloudflare",
+    provider: "cloudflare",
+    recommended: true,
+  },
   {
     description: "Fast Gemini model for general investigations.",
     id: "gemini-3.8-flash",
@@ -24,7 +31,7 @@ const modelCatalog: AvailableModel[] = [
     id: "openai/gpt-oss-20b",
     label: "GPT-OSS 20B · Groq",
     provider: "groq",
-    recommended: true,
+    recommended: false,
   },
 ];
 
@@ -32,7 +39,12 @@ function providerKey(config: BackendConfig, provider: LlmProvider): string | und
   if (provider === "gemini") {
     return config.GEMINI_API_KEY;
   }
-  return config.GROQ_API_KEY;
+  if (provider === "groq") {
+    return config.GROQ_API_KEY;
+  }
+  return config.CLOUDFLARE_ACCOUNT_ID && config.CLOUDFLARE_API_TOKEN
+    ? config.CLOUDFLARE_API_TOKEN
+    : undefined;
 }
 
 export class ModelSelectionError extends Error {
@@ -57,7 +69,8 @@ export class ModelRegistry {
 
   get defaultModel(): string | null {
     return (
-      this.availableModels.find((model) => model.recommended)?.id ??
+      this.availableModels.find((model) => model.provider === "cloudflare")?.id ??
+      this.availableModels.find((model) => model.provider === "groq")?.id ??
       this.availableModels[0]?.id ??
       null
     );
@@ -79,13 +92,20 @@ export class ModelRegistry {
       throw new ModelSelectionError(`No API key is configured for ${model.provider}.`);
     }
 
-    return model.provider === "groq"
-      ? createOpenAiCompatibleClient({
-          apiKey,
-          model: model.id,
-          timeoutMs: this.config.LLM_TIMEOUT_MS,
-        })
-      : createGeminiClient({ apiKey, model: model.id, timeoutMs: this.config.LLM_TIMEOUT_MS });
+    if (model.provider === "gemini") {
+      return createGeminiClient({ apiKey, model: model.id, timeoutMs: this.config.LLM_TIMEOUT_MS });
+    }
+
+    const baseUrl =
+      model.provider === "cloudflare"
+        ? `https://api.cloudflare.com/client/v4/accounts/${this.config.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`
+        : undefined;
+    return createOpenAiCompatibleClient({
+      apiKey,
+      baseUrl,
+      model: model.provider === "cloudflare" ? this.config.CLOUDFLARE_MODEL : model.id,
+      timeoutMs: this.config.LLM_TIMEOUT_MS,
+    });
   }
 }
 

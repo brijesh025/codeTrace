@@ -69,7 +69,7 @@ interface ModelOption {
   description: string;
   id: string;
   label: string;
-  provider: "gemini" | "groq";
+  provider: "gemini" | "groq" | "cloudflare";
   recommended: boolean;
 }
 

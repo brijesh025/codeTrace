@@ -7,6 +7,9 @@ const environmentSchema = z.object({
   AUTH_INTERNAL_SECRET: z.string().min(32).optional(),
   GEMINI_API_KEY: z.string().min(1).optional(),
   GROQ_API_KEY: z.string().min(1).optional(),
+  CLOUDFLARE_ACCOUNT_ID: z.string().min(1).optional(),
+  CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
+  CLOUDFLARE_MODEL: z.string().min(1).default("@cf/openai/gpt-oss-20b"),
   LLM_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
 });
 

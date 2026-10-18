@@ -15,6 +15,17 @@ describe("model registry", () => {
     expect(registry.has("gemini-3.8-flash")).toBe(false);
   });
 
+  it("uses Cloudflare GPT-OSS as the recommended default when configured", () => {
+    const config = loadBackendConfig({
+      CLOUDFLARE_ACCOUNT_ID: "test-account-id",
+      CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
+    });
+    const registry = createModelRegistry(config);
+
+    expect(registry.defaultModel).toBe("@cf/openai/gpt-oss-20b");
+    expect(registry.list()[0]?.provider).toBe("cloudflare");
+  });
+
   it("exposes both provider catalogs when both keys are configured", () => {
     const config = loadBackendConfig({
       GEMINI_API_KEY: "test-gemini-key",
