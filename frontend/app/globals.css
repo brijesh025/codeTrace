@@ -1220,3 +1220,141 @@ textarea:disabled {
     padding: 30px 24px;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   CodeTrace theme pass
+   Dark graphite surfaces, coral actions, and readable ice-toned content.
+   Keep report states on the same surface system as the rest of the app.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --ink: #f8f4f5;
+  --muted: #aaa1a7;
+  --line: rgb(255 255 255 / 11%);
+  --wash: #0a090b;
+  --panel: rgb(25 18 22 / 88%);
+  --panel-strong: #1b1217;
+  --navy: #f8f4f5;
+  --blue: #ff5363;
+  --cyan: #ffb0b3;
+  --orange: #ffb870;
+  --green: #7be4b5;
+  --red-glow: rgb(234 58 68 / 19%);
+}
+
+::selection {
+  background: rgb(255 83 99 / 35%);
+  color: #fff;
+}
+
+.stack-form select option {
+  background: #1a1418;
+  color: var(--ink);
+}
+
+.status-queued,
+.status-running {
+  background: rgb(255 184 112 / 13%);
+  color: #ffc58b;
+}
+
+.status-succeeded {
+  background: rgb(123 228 181 / 13%);
+  color: #8ef0c0;
+}
+
+.status-failed {
+  background: rgb(255 83 99 / 13%);
+  color: #ff9da5;
+}
+
+.status-pending {
+  background: rgb(178 170 181 / 12%);
+  color: #c8c0c6;
+}
+
+.alert-error,
+.result-alert {
+  background: rgb(255 83 99 / 9%);
+  border-color: rgb(255 111 124 / 30%);
+  color: #ffb0b7;
+}
+
+.commit-label {
+  background: rgb(117 125 255 / 13%);
+  color: #b7b9ff;
+}
+
+.progress-message {
+  background: rgb(255 255 255 / 5%);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.summary-block {
+  background: linear-gradient(135deg, rgb(255 83 99 / 10%), rgb(255 255 255 / 3%));
+  border: 1px solid rgb(255 83 99 / 22%);
+  border-left: 3px solid var(--blue);
+}
+
+.summary-text {
+  color: var(--ink);
+}
+
+.finding-card,
+.side-block,
+.empty-state {
+  background: rgb(255 255 255 / 4%);
+  border-color: var(--line);
+}
+
+.finding-card {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.finding-card:hover {
+  border-color: rgb(255 83 99 / 32%);
+}
+
+.finding-title-row h4,
+.section-heading h3 {
+  color: var(--ink);
+}
+
+.priority-high {
+  background: rgb(255 83 99 / 14%);
+  color: #ff9da5;
+}
+
+.priority-medium {
+  background: rgb(255 184 112 / 14%);
+  color: #ffc58b;
+}
+
+.priority-low {
+  background: rgb(123 228 181 / 14%);
+  color: #8ef0c0;
+}
+
+.evidence-path {
+  background: rgb(69 214 190 / 9%);
+  border: 1px solid rgb(69 214 190 / 16%);
+  color: #9be8db;
+}
+
+.evidence-path small {
+  color: #75cdbf;
+}
+
+.checklist li span {
+  background: rgb(117 125 255 / 18%);
+  color: #b7b9ff;
+}
+
+.uncertainty-block {
+  background: rgb(255 184 112 / 8%);
+  border-color: rgb(255 184 112 / 28%);
+}
+
+.empty-state {
+  color: var(--muted);
+}
