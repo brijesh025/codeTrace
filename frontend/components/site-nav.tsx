@@ -36,7 +36,9 @@ export function SiteNav({
   return (
     <nav className="site-nav" aria-label="Primary navigation">
       <Link className="brand-lockup" href="/" aria-label="CodeTrace home">
-        <span className="brand-mark"><CodeTraceLogo /></span>
+        <span className="brand-mark">
+          <CodeTraceLogo />
+        </span>
         <span className="brand-name">CodeTrace</span>
       </Link>
 

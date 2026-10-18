@@ -8,6 +8,7 @@ import { loadBackendConfig } from "./config.js";
 import { createGraphHealthClient } from "./graph-health.js";
 import { IndexJobManager } from "./indexing.js";
 import { createInvestigationStore } from "./investigations.js";
+import { RepositoryMemoryStore } from "./memory.js";
 import { createModelRegistry } from "./models.js";
 
 const config = loadBackendConfig();
@@ -17,6 +18,7 @@ const investigationGraph = new GraphStore({
 });
 const modelRegistry = createModelRegistry(config);
 const investigationTools = new InvestigationTools(investigationGraph);
+const memoryStore = new RepositoryMemoryStore(investigationGraph);
 const app = buildApp({
   authInternalSecret: config.AUTH_INTERNAL_SECRET,
   graphHealthClient: createGraphHealthClient(config.FALKORDB_URL),
@@ -26,6 +28,7 @@ const app = buildApp({
     close: () => investigationGraph.close(),
     getRevision: (userId, repositoryId) => indexingService.getLatestRevision(userId, repositoryId),
     hasRepository: (userId, repositoryId) => indexingService.hasRepository(userId, repositoryId),
+    memoryStore,
     run: async (input) => {
       const investigationAgent = new InvestigationAgent(
         modelRegistry.createClient(input.modelId),

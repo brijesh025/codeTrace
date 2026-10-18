@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createInvestigationStore } from "../src/investigations.js";
+import type { InvestigationMemoryStore } from "../src/memory.js";
 
 const revision = {
   commitSha: "0123456789abcdef0123456789abcdef01234567",
@@ -26,6 +27,7 @@ describe("Investigation store", () => {
             summary: "Evidence-backed result.",
             uncertainty: [],
           },
+          trace: [],
           toolCalls: 2,
           turns: 3,
         };
@@ -89,5 +91,61 @@ describe("Investigation store", () => {
         status: "failed",
       }),
     );
+  });
+
+  it("loads prior memory before running and saves the completed report", async () => {
+    let receivedMemoryCount = 0;
+    let savedInvestigationId: string | undefined;
+    const memoryStore: InvestigationMemoryStore = {
+      search: async () => [
+        {
+          checklist: [],
+          createdAt: "2026-10-18T00:00:00.000Z",
+          findings: [],
+          id: "memory-1",
+          investigationId: "previous-investigation",
+          question: "What is affected?",
+          repositoryId: revision.repositoryId,
+          sourceCommitSha: revision.commitSha,
+          summary: "A previous answer exists.",
+          uncertainty: [],
+        },
+      ],
+      save: async ({ investigationId }) => {
+        savedInvestigationId = investigationId;
+      },
+    };
+    const store = createInvestigationStore({
+      getRevision: () => revision,
+      hasRepository: () => true,
+      memoryStore,
+      run: async (input) => {
+        receivedMemoryCount = input.priorMemories?.length ?? 0;
+        return {
+          report: {
+            checklist: [],
+            findings: [],
+            summary: "Evidence-backed result.",
+            uncertainty: [],
+          },
+          trace: [],
+          toolCalls: 1,
+          turns: 1,
+        };
+      },
+    });
+
+    const created = store.create({
+      question: "What is affected?",
+      repositoryId: revision.repositoryId,
+      userId: "user-1",
+    });
+    if (!created) {
+      throw new Error("Investigation was not created.");
+    }
+    await tick();
+
+    expect(receivedMemoryCount).toBe(1);
+    expect(savedInvestigationId).toBe(created.id);
   });
 });

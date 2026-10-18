@@ -184,6 +184,23 @@ describe("InvestigationAgent", () => {
 
     expect(result.toolCalls).toBe(3);
     expect(result.turns).toBe(4);
+    expect(result.trace.map((step) => step.kind)).toEqual([
+      "question",
+      "tool_call",
+      "tool_result",
+      "tool_call",
+      "tool_result",
+      "tool_call",
+      "tool_result",
+      "final",
+    ]);
+    expect(result.trace[2]).toEqual(
+      expect.objectContaining({
+        result: expect.objectContaining({ resultCount: 1 }),
+        status: "succeeded",
+        toolName: "find_entities",
+      }),
+    );
     expect(result.report.findings[0]).toEqual(
       expect.objectContaining({
         entity: affected,
@@ -217,6 +234,10 @@ describe("InvestigationAgent", () => {
       agent.run({ ...scope, question: "What is affected?" }),
     ).rejects.toMatchObject<InvestigationAgentError>({
       code: "FINAL_RESPONSE_MISSING_EVIDENCE",
+      trace: expect.arrayContaining([
+        expect.objectContaining({ kind: "question" }),
+        expect.objectContaining({ kind: "tool_result", status: "succeeded" }),
+      ]),
     });
   });
 });

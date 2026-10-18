@@ -63,12 +63,18 @@ function GraphView() {
           matter during change: definitions, imports, calls, references, and source locations.
         </p>
         <div className="view-facts">
-          <span><FileCode2 size={15} /> Source files</span>
-          <span><GitBranch size={15} /> Relationships</span>
-          <span><Database size={15} /> FalkorDB graph</span>
+          <span>
+            <FileCode2 size={15} /> Source files
+          </span>
+          <span>
+            <GitBranch size={15} /> Relationships
+          </span>
+          <span>
+            <Database size={15} /> FalkorDB graph
+          </span>
         </div>
       </div>
-      <div className="graph-canvas" aria-label="Repository graph illustration">
+      <div className="graph-canvas" aria-label="Repository graph illustration" role="img">
         <span className="graph-line graph-line-one" />
         <span className="graph-line graph-line-two" />
         <span className="graph-line graph-line-three" />
@@ -90,20 +96,38 @@ function AgentView() {
         <h3>The agent searches the graph before it explains anything.</h3>
         <p>
           A question becomes a small investigation loop. The model can ask for entities,
-          dependencies, callers, relationships, evidence paths, and source locations—nothing
-          outside the declared tool boundary.
+          dependencies, callers, relationships, evidence paths, and source locations—nothing outside
+          the declared tool boundary.
         </p>
         <div className="view-facts">
-          <span><MessageSquare size={15} /> Question</span>
-          <span><Bot size={15} /> Tool calls</span>
-          <span><ShieldCheck size={15} /> Verified evidence</span>
+          <span>
+            <MessageSquare size={15} /> Question
+          </span>
+          <span>
+            <Bot size={15} /> Tool calls
+          </span>
+          <span>
+            <ShieldCheck size={15} /> Verified evidence
+          </span>
         </div>
       </div>
-      <div className="agent-canvas" aria-label="Agent investigation loop illustration">
-        <div className="agent-step agent-step-question"><MessageSquare size={18} /><span>ask</span></div>
-        <div className="agent-step agent-step-tools"><Bot size={18} /><span>query tools</span></div>
-        <div className="agent-step agent-step-graph"><Database size={18} /><span>retrieve graph</span></div>
-        <div className="agent-step agent-step-evidence"><ShieldCheck size={18} /><span>verify paths</span></div>
+      <div className="agent-canvas" aria-label="Agent investigation loop illustration" role="img">
+        <div className="agent-step agent-step-question">
+          <MessageSquare size={18} />
+          <span>ask</span>
+        </div>
+        <div className="agent-step agent-step-tools">
+          <Bot size={18} />
+          <span>query tools</span>
+        </div>
+        <div className="agent-step agent-step-graph">
+          <Database size={18} />
+          <span>retrieve graph</span>
+        </div>
+        <div className="agent-step agent-step-evidence">
+          <ShieldCheck size={18} />
+          <span>verify paths</span>
+        </div>
         <span className="agent-loop agent-loop-one" />
         <span className="agent-loop agent-loop-two" />
         <span className="agent-loop agent-loop-three" />
@@ -124,14 +148,22 @@ function AnswerView() {
           and source locations to every supported finding.
         </p>
         <div className="view-facts">
-          <span><ShieldCheck size={15} /> Supported</span>
-          <span><FileCode2 size={15} /> Source location</span>
-          <span><GitBranch size={15} /> Evidence path</span>
+          <span>
+            <ShieldCheck size={15} /> Supported
+          </span>
+          <span>
+            <FileCode2 size={15} /> Source location
+          </span>
+          <span>
+            <GitBranch size={15} /> Evidence path
+          </span>
         </div>
       </div>
-      <div className="answer-canvas" aria-label="Investigation answer illustration">
+      <div className="answer-canvas" aria-label="Investigation answer illustration" role="img">
         <div className="answer-card answer-card-main">
-          <div className="answer-card-heading"><span className="answer-dot" /> supported finding</div>
+          <div className="answer-card-heading">
+            <span className="answer-dot" /> supported finding
+          </div>
           <strong>auth.ts could affect session middleware</strong>
           <code>auth.ts → middleware.ts → api.ts</code>
         </div>
@@ -156,5 +188,10 @@ function GraphNode({
   icon: ReactNode;
   label: string;
 }) {
-  return <span className={`graph-node ${className}`}>{icon}<small>{label}</small></span>;
+  return (
+    <span className={`graph-node ${className}`}>
+      {icon}
+      <small>{label}</small>
+    </span>
+  );
 }

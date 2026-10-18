@@ -168,7 +168,7 @@ export class GraphStore {
       "GRAPH.QUERY",
       this.graphName,
       parameterizedQuery(
-        "MATCH (n) WHERE n.repositoryId = $repositoryId AND n.commitSha <> $commitSha DETACH DELETE n",
+        "MATCH (n) WHERE n.repositoryId = $repositoryId AND n.commitSha IS NOT NULL AND n.commitSha <> $commitSha DETACH DELETE n",
         { commitSha: input.commitSha, repositoryId: input.repositoryId },
       ),
     );

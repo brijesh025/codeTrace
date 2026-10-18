@@ -45,6 +45,7 @@ describe("Phase 8 investigation API", () => {
           summary: "The report is evidence-backed.",
           uncertainty: [],
         },
+        trace: [],
         toolCalls: 1,
         turns: 2,
       }),

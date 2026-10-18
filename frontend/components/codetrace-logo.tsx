@@ -10,13 +10,25 @@ export function CodeTraceLogo(props: SVGProps<SVGSVGElement>) {
       {...props}
     >
       <defs>
-        <linearGradient id="ct-surface" x1="8" x2="40" y1="5" y2="43" gradientUnits="userSpaceOnUse">
+        <linearGradient
+          id="ct-surface"
+          x1="8"
+          x2="40"
+          y1="5"
+          y2="43"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop stopColor="#3A1D28" />
           <stop offset="1" stopColor="#160E13" />
         </linearGradient>
       </defs>
       <rect fill="url(#ct-surface)" height="44" rx="14" width="44" x="2" y="2" />
-      <path d="M31.2 12.3a13.2 13.2 0 1 0 0 23.4" stroke="currentColor" strokeLinecap="round" strokeWidth="4.2" />
+      <path
+        d="M31.2 12.3a13.2 13.2 0 1 0 0 23.4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="4.2"
+      />
       <path
         d="M22.5 13.2h17M31 13.2v22.2"
         stroke="#FF5363"

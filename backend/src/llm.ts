@@ -142,7 +142,9 @@ function providerMessage(payload: unknown, status: number): string {
   }
 
   if (Array.isArray(payload.messages)) {
-    const messages = payload.messages.filter((message): message is string => typeof message === "string");
+    const messages = payload.messages.filter(
+      (message): message is string => typeof message === "string",
+    );
     if (messages.length > 0) {
       return messages.join("; ");
     }
@@ -431,9 +433,7 @@ export function createOpenAiCompatibleClient({
         messages: openAiMessages(request),
         model,
         ...(tools && toolChoice !== "NONE" ? { tool_choice: "auto" } : {}),
-        ...(jsonMode && toolChoice === "NONE"
-          ? { response_format: { type: "json_object" } }
-          : {}),
+        ...(jsonMode && toolChoice === "NONE" ? { response_format: { type: "json_object" } } : {}),
       };
 
       for (let attempt = 0; attempt <= maxRetries; attempt += 1) {

@@ -15,6 +15,7 @@ import type {
 } from "@codetrace/worker";
 
 import type { LlmClient, LlmContent, LlmFunctionCall, LlmGenerateRequest } from "./llm.js";
+import { memoryContext, type RepositoryInvestigationMemory } from "./memory.js";
 
 const MAX_AGENT_TURNS = 4;
 const MAX_TOOL_CALLS = 8;
@@ -79,6 +80,7 @@ type ToolResult = InvestigationResult | EvidencePathResult | SourceLocationResul
 export interface InvestigationAgentInput {
   commitSha: string;
   modelId?: string;
+  priorMemories?: RepositoryInvestigationMemory[];
   question: string;
   repositoryId: string;
 }
@@ -98,13 +100,37 @@ export interface InvestigationReport {
   uncertainty: string[];
 }
 
+export interface InvestigationTraceResult {
+  entityIds?: string[];
+  error?: string;
+  findingEntityIds?: string[];
+  locationCount?: number;
+  pathCount?: number;
+  resultCount?: number;
+  truncated?: boolean;
+}
+
+export interface InvestigationTraceStep {
+  arguments?: Record<string, unknown>;
+  id: string;
+  kind: "final" | "question" | "tool_call" | "tool_result";
+  result?: InvestigationTraceResult;
+  status?: "failed" | "requested" | "succeeded" | "validated";
+  summary: string;
+  toolName?: string;
+  turn: number;
+}
+
 export interface InvestigationAgentResult {
   report: InvestigationReport;
+  trace: InvestigationTraceStep[];
   toolCalls: number;
   turns: number;
 }
 
 export class InvestigationAgentError extends Error {
+  public trace: InvestigationTraceStep[] = [];
+
   constructor(
     message: string,
     public readonly code:
@@ -227,6 +253,7 @@ const SYSTEM_PROMPT = `You are CodeTrace, an evidence-bound codebase investigati
 Use only the declared investigation tools. The repository and commit scope are fixed by the server and must not be requested from the user or changed.
 Never invent entity IDs, paths, line numbers, relationship paths, or confidence values.
 Use tools to retrieve graph evidence before making findings. A substantive finding must use an entity ID returned by a tool and have a retrieved evidence path.
+Prior repository memory is a hint for investigation direction only. It may come from an older commit and is never evidence by itself; verify relevant claims with the current graph tools.
 After gathering enough evidence, respond with JSON only using this shape:
 {"summary":"...","findings":[{"entityId":"...","priority":"high|medium|low","reason":"..."}],"checklist":["..."],"uncertainty":["..."]}
 Do not include evidence paths in your JSON; the server attaches verified evidence to each finding.
@@ -299,11 +326,43 @@ export class InvestigationAgent {
   ) {}
 
   async run(input: InvestigationAgentInput): Promise<InvestigationAgentResult> {
+    const trace: InvestigationTraceStep[] = [
+      {
+        id: "trace-1",
+        kind: "question",
+        status: "requested",
+        summary: input.priorMemories?.length
+          ? `Question submitted with ${input.priorMemories.length} prior repository memor${
+              input.priorMemories.length === 1 ? "y" : "ies"
+            } available for verification.`
+          : "Question submitted to the evidence-bound agent.",
+        turn: 0,
+      },
+    ];
+
+    try {
+      return await this.runWithTrace(input, trace);
+    } catch (error) {
+      if (error instanceof InvestigationAgentError) {
+        error.trace = trace;
+      }
+      throw error;
+    }
+  }
+
+  private async runWithTrace(
+    input: InvestigationAgentInput,
+    trace: InvestigationTraceStep[],
+  ): Promise<InvestigationAgentResult> {
     const contents: LlmContent[] = [
       {
         parts: [
           {
-            text: `Repository: ${input.repositoryId}\nCommit: ${input.commitSha}\nQuestion: ${input.question}`,
+            text: `Repository: ${input.repositoryId}\nCommit: ${input.commitSha}\nQuestion: ${input.question}${
+              input.priorMemories?.length
+                ? `\nPrior repository memory (verify before relying on it): ${memoryContext(input.priorMemories)}`
+                : ""
+            }`,
           },
         ],
         role: "user",
@@ -339,12 +398,33 @@ export class InvestigationAgent {
         const functionResponses = [];
         for (const call of response.functionCalls) {
           toolCalls += 1;
+          trace.push({
+            arguments: traceArguments(call.args),
+            id: `trace-${trace.length + 1}`,
+            kind: "tool_call",
+            status: "requested",
+            summary: `Agent requested the ${call.name} graph tool.`,
+            toolName: call.name,
+            turn,
+          });
           const result = await this.executeTool(call, input);
           if ("error" in result) {
             toolErrors.push(result.error);
           } else {
             this.catalogResult(result, entities, evidencePaths, sourceLocations);
           }
+          trace.push({
+            id: `trace-${trace.length + 1}`,
+            kind: "tool_result",
+            result: summarizeToolResult(result),
+            status: "error" in result ? "failed" : "succeeded",
+            summary:
+              "error" in result
+                ? `${call.name} failed: ${result.error}`
+                : summarizeToolResultText(call.name, result),
+            toolName: call.name,
+            turn,
+          });
           functionResponses.push({
             functionResponse: {
               id: call.id,
@@ -387,11 +467,19 @@ export class InvestigationAgent {
       if (toolErrors.length > 0) {
         uncertainty.push(`Some investigation tools failed: ${toolErrors.join("; ")}`);
       }
-      return {
-        report: { ...parsed.data, findings, uncertainty: [...new Set(uncertainty)] },
-        toolCalls,
-        turns: turn,
-      };
+      const report = { ...parsed.data, findings, uncertainty: [...new Set(uncertainty)] };
+      trace.push({
+        id: `trace-${trace.length + 1}`,
+        kind: "final",
+        result: {
+          findingEntityIds: findings.map((finding) => finding.entity.id),
+          resultCount: findings.length,
+        },
+        status: "validated",
+        summary: `Validated ${findings.length} finding${findings.length === 1 ? "" : "s"} against retrieved graph evidence.`,
+        turn,
+      });
+      return { report, trace, toolCalls, turns: turn };
     }
 
     contents.push({
@@ -433,15 +521,23 @@ export class InvestigationAgent {
         sourceLocations: sourceLocations.get(finding.entityId) ?? [],
       });
     }
-    return {
-      report: {
-        ...parsed.data,
-        findings,
-        uncertainty: [...new Set([...parsed.data.uncertainty, ...toolErrors])],
-      },
-      toolCalls,
-      turns: MAX_AGENT_TURNS + 1,
+    const report = {
+      ...parsed.data,
+      findings,
+      uncertainty: [...new Set([...parsed.data.uncertainty, ...toolErrors])],
     };
+    trace.push({
+      id: `trace-${trace.length + 1}`,
+      kind: "final",
+      result: {
+        findingEntityIds: findings.map((finding) => finding.entity.id),
+        resultCount: findings.length,
+      },
+      status: "validated",
+      summary: `Validated ${findings.length} finding${findings.length === 1 ? "" : "s"} after the tool-call limit was reached.`,
+      turn: MAX_AGENT_TURNS + 1,
+    });
+    return { report, trace, toolCalls, turns: MAX_AGENT_TURNS + 1 };
   }
 
   private async executeTool(
@@ -530,4 +626,53 @@ export class InvestigationAgent {
       }
     }
   }
+}
+
+function summarizeToolResult(result: ToolResult | { error: string }): InvestigationTraceResult {
+  if ("error" in result) {
+    return { error: result.error };
+  }
+  if ("results" in result) {
+    return {
+      entityIds: result.results.slice(0, 8).map((entity) => entity.id),
+      resultCount: result.results.length,
+      truncated: result.truncated,
+    };
+  }
+  if ("paths" in result) {
+    return {
+      entityIds: [
+        ...new Set(result.paths.flatMap((path) => path.entities.map((entity) => entity.id))),
+      ].slice(0, 8),
+      pathCount: result.paths.length,
+      truncated: result.truncated,
+    };
+  }
+  return {
+    entityIds: result.locations.slice(0, 8).map((location) => location.id),
+    locationCount: result.locations.length,
+    truncated: result.truncated,
+  };
+}
+
+function traceArguments(args: Record<string, unknown>): Record<string, unknown> {
+  const serialized = JSON.stringify(args);
+  if (serialized.length <= 2_000) {
+    return args;
+  }
+  return {
+    truncated: true,
+    preview: serialized.slice(0, 2_000),
+  };
+}
+
+function summarizeToolResultText(toolName: string, result: ToolResult): string {
+  const summary = summarizeToolResult(result);
+  if (summary.resultCount !== undefined) {
+    return `${toolName} returned ${summary.resultCount} graph result${summary.resultCount === 1 ? "" : "s"}.`;
+  }
+  if (summary.pathCount !== undefined) {
+    return `${toolName} retrieved ${summary.pathCount} evidence path${summary.pathCount === 1 ? "" : "s"}.`;
+  }
+  return `${toolName} retrieved ${summary.locationCount ?? 0} source location${summary.locationCount === 1 ? "" : "s"}.`;
 }

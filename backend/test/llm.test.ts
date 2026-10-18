@@ -163,10 +163,9 @@ describe("Gemini client", () => {
       jsonMode: true,
       fetchImpl: async (_input, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "{}" } }] }),
-          { status: 200 },
-        );
+        return new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), {
+          status: 200,
+        });
       },
     });
 
@@ -184,17 +183,18 @@ describe("Gemini client", () => {
       apiKey: "test-provider-key",
       fetchImpl: async (_input, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "{}" } }] }),
-          { status: 200 },
-        );
+        return new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), {
+          status: 200,
+        });
       },
     });
 
     await client.generate({
       contents: [
         {
-          parts: [{ functionCall: { args: { query: "run" }, id: "call-1", name: "find_entities" } }],
+          parts: [
+            { functionCall: { args: { query: "run" }, id: "call-1", name: "find_entities" } },
+          ],
           role: "model",
         },
       ],

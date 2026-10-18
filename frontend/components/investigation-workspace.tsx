@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { EvidenceGraph } from "./evidence-graph";
+
 type IndexStatus = "failed" | "queued" | "running" | "succeeded";
 type InvestigationStatus = "failed" | "pending" | "queued" | "running" | "succeeded";
 
@@ -48,6 +50,27 @@ interface Finding {
   sourceLocations: Entity[];
 }
 
+interface TraceResult {
+  entityIds?: string[];
+  error?: string;
+  findingEntityIds?: string[];
+  locationCount?: number;
+  pathCount?: number;
+  resultCount?: number;
+  truncated?: boolean;
+}
+
+interface TraceStep {
+  arguments?: Record<string, unknown>;
+  id: string;
+  kind: "final" | "question" | "tool_call" | "tool_result";
+  result?: TraceResult;
+  status?: "failed" | "requested" | "succeeded" | "validated";
+  summary: string;
+  toolName?: string;
+  turn: number;
+}
+
 interface InvestigationRecord {
   commitSha?: string;
   error?: ApiError;
@@ -59,6 +82,7 @@ interface InvestigationRecord {
     uncertainty: string[];
   };
   status: InvestigationStatus;
+  trace?: TraceStep[];
 }
 
 interface Props {
@@ -99,6 +123,41 @@ function pathLabel(path: EvidencePath): string {
 
 function errorLabel(error: ApiError | undefined, fallback: string): string {
   return error ? `${error.code ? `${error.code}: ` : ""}${error.message}` : fallback;
+}
+
+function traceKindLabel(kind: TraceStep["kind"]): string {
+  switch (kind) {
+    case "question":
+      return "Question";
+    case "tool_call":
+      return "Graph tool";
+    case "tool_result":
+      return "Graph result";
+    case "final":
+      return "Validated answer";
+  }
+}
+
+function traceResultLabel(result: TraceResult): string {
+  const details: string[] = [];
+  if (result.resultCount !== undefined) {
+    details.push(`${result.resultCount} result${result.resultCount === 1 ? "" : "s"}`);
+  }
+  if (result.pathCount !== undefined) {
+    details.push(`${result.pathCount} path${result.pathCount === 1 ? "" : "s"}`);
+  }
+  if (result.locationCount !== undefined) {
+    details.push(`${result.locationCount} location${result.locationCount === 1 ? "" : "s"}`);
+  }
+  if (result.findingEntityIds?.length) {
+    details.push(
+      `${result.findingEntityIds.length} supported finding${result.findingEntityIds.length === 1 ? "" : "s"}`,
+    );
+  }
+  if (result.truncated) {
+    details.push("bounded");
+  }
+  return details.join(" · ");
 }
 
 export function InvestigationWorkspace({ initialRepositoryUrl }: Props = {}) {
@@ -455,8 +514,52 @@ function InvestigationResultCard({ investigation }: { investigation: Investigati
         </div>
       ) : null}
 
+      {investigation.trace ? <TraceContent trace={investigation.trace} /> : null}
       {investigation.report ? <ReportContent report={investigation.report} /> : null}
     </section>
+  );
+}
+
+function TraceContent({ trace }: { trace: TraceStep[] }) {
+  return (
+    <details className="trace-panel" open>
+      <summary>
+        <span>
+          <span className="eyebrow">Investigation trail</span>
+          <strong>How CodeTrace reached this result</strong>
+        </span>
+        <small>{trace.length} steps</small>
+      </summary>
+      <ol className="trace-list">
+        {trace.map((step, index) => (
+          <li className={`trace-step trace-step-${step.kind}`} key={step.id}>
+            <div className="trace-step-heading">
+              <span className="trace-index">{String(index + 1).padStart(2, "0")}</span>
+              <span className="trace-kind">{traceKindLabel(step.kind)}</span>
+              {step.toolName ? <code>{step.toolName}</code> : null}
+              <span className="trace-turn">turn {step.turn}</span>
+            </div>
+            <p>{step.summary}</p>
+            {step.arguments ? (
+              <code className="trace-code">{JSON.stringify(step.arguments)}</code>
+            ) : null}
+            {step.result ? (
+              <div className="trace-result">
+                <span className={`trace-status trace-status-${step.status ?? "succeeded"}`}>
+                  {step.status === "failed" ? "Failed" : "Graph evidence"}
+                </span>
+                {traceResultLabel(step.result) ? (
+                  <span>{traceResultLabel(step.result)}</span>
+                ) : null}
+                {step.result.entityIds?.length ? (
+                  <span>{step.result.entityIds.slice(0, 4).join(", ")}</span>
+                ) : null}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
@@ -467,6 +570,8 @@ function ReportContent({ report }: { report: NonNullable<InvestigationRecord["re
         <p className="eyebrow">Summary</p>
         <p className="summary-text">{report.summary}</p>
       </div>
+
+      <EvidenceGraph findings={report.findings} />
 
       <div className="report-columns">
         <div>
