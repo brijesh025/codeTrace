@@ -4,6 +4,63 @@
 
 Build an agent that investigates a codebase using **FalkorDB as its graph-reasoning layer**. Given a repository and a question about a bug or code change, it should identify potentially affected components, rank where to investigate first, and explain each finding with verifiable graph paths and source locations.
 
+## Local setup and handoff
+
+### Prerequisites
+
+- Node.js 22 or newer.
+- pnpm 10.13.1 or newer.
+- Docker Desktop with Docker Compose support.
+- A GitHub OAuth App for local sign-in.
+- At least one server-side LLM provider key for investigations. Gemini and Groq are supported.
+
+### Install and start dependencies
+
+From the repository root:
+
+```powershell
+pnpm install
+pnpm db:up
+pnpm dev
+```
+
+The frontend runs on `http://localhost:3000`, the backend runs on port `5001`, and FalkorDB is exposed on port `6379`. Stop FalkorDB with `pnpm db:down`.
+
+### Environment files
+
+Keep configuration in the three package directories. Do not commit these files or paste their values into documentation:
+
+- `frontend/.env.local`: `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`, `AUTH_SECRET`, `AUTH_INTERNAL_SECRET`, `BACKEND_URL`.
+- `backend/.env`: `BACKEND_HOST`, `BACKEND_PORT`, `FALKORDB_URL`, `AUTH_INTERNAL_SECRET`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `LLM_TIMEOUT_MS`.
+- `worker/.env`: `WORKER_TEMP_DIR` and the worker/FalkorDB settings used by the local worker process.
+
+The GitHub OAuth callback must be `http://localhost:3000/api/auth/callback/github`. `BACKEND_URL` should point to `http://127.0.0.1:5001`. The backend and frontend must share the same internal authentication secret.
+
+### Verification commands
+
+```powershell
+pnpm verify:phase10
+pnpm verify:phase11
+```
+
+The verification gate runs formatting, linting, type checks, tests, and production builds across the workspace. Phase 10 currently has 45 automated tests across frontend, backend, and worker.
+
+### Supported repositories
+
+The extractor currently recognizes TypeScript, JavaScript, Python, Java, C, C++, and Go source files. Repositories must be public GitHub HTTPS repositories. Indexing is shallow and bounded, filters unsupported/generated files, and never executes repository scripts.
+
+### Known limitations and troubleshooting
+
+- Private repository analysis is not enabled yet; private repositories are displayed but remain unavailable for analysis.
+- LLM rate limits and provider quota errors are surfaced to the user. Configure the other supported provider/model and retry when a provider is exhausted.
+- A failed investigation does not mean indexing failed. Check the investigation error, select another configured model, and retry.
+- If repository loading fails, confirm the GitHub session was refreshed after changing OAuth scopes and that the frontend can reach port `5001`.
+- If indexing cannot connect to FalkorDB, run `docker compose ps` and confirm the `falkordb` health check is passing.
+
+### Clean-checkout handoff
+
+Another developer should be able to clone the repository, install Node/pnpm dependencies, create the three local environment files, start FalkorDB, run `pnpm verify:phase11`, and then run `pnpm dev`. The live GitHub OAuth flow and provider-backed investigation still require their own credentials and quota.
+
 ## Current implementation status
 
 - [Phase 0 evaluation](PHASE_0_EVALUATION.md) is complete: CodeTrace will use an owned Node.js Tree-sitter extractor rather than directly reusing FalkorDB CodeGraph.
@@ -16,6 +73,9 @@ Build an agent that investigates a codebase using **FalkorDB as its graph-reason
 - Phase 7 adds worker-owned, bounded investigation tools for entity search, dependencies, callers, relationship traversal, evidence paths, source locations, and deterministic ranking.
 - Phase 8 adds server-only Gemini/Groq clients, bounded function-calling orchestration, validated tool arguments, evidence-backed reports, structured tool/provider failures, and asynchronous investigation execution. The live Gemini provider is subject to its free-tier quota; the automated local contract is verified.
 - Phase 9 adds the authenticated browser workflow: server-side backend proxy routes, repository indexing and polling, investigation submission and polling, responsive result rendering, graph evidence paths, source locations, checklists, uncertainty, and actionable error states.
+- Phase 9.5 expands Tree-sitter extraction to Python, Java, C, C++, and Go while preserving the same normalized graph and investigation contracts.
+- Phase 10 validation is complete: the automated suite passes 45 tests across the frontend, backend, and worker, and the live GitHub OAuth flow has been manually verified. Provider-backed investigation/API quota issues remain intentionally deferred.
+- Phase 11 documentation and handoff are complete: setup, environment contracts, verification commands, supported languages, limits, troubleshooting, and clean-checkout instructions are documented below.
 
 ### Phase 2 local authentication setup
 
@@ -46,7 +106,7 @@ This must be more than a generic code-chat interface or a wrapper around FalkorD
 
 ## Primary MVP
 
-Support one repository and one language family first: **TypeScript/JavaScript**. The main investigation question is:
+Support one repository across the initial supported languages: **TypeScript/JavaScript, Python, Java, C, C++, and Go**. The main investigation question is:
 
 > If this module or behavior is broken or changed, which parts of the codebase should I investigate, and why?
 
@@ -64,7 +124,7 @@ A user should be able to submit a public GitHub repository URL and an investigat
 - **Frontend:** Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui.
 - **Backend:** Node.js + TypeScript, exposed through a small API service.
 - **Graph database:** FalkorDB, run locally with Docker Compose during development.
-- **Code extraction:** First evaluate [FalkorDB CodeGraph](https://github.com/FalkorDB/code-graph). Reuse its extraction logic only after checking current capabilities, license, dependencies, and how it can be integrated. If it does not fit, use Tree-sitter for TypeScript/JavaScript parsing and implement only the missing extraction/mapping logic.
+- **Code extraction:** First evaluate [FalkorDB CodeGraph](https://github.com/FalkorDB/code-graph). Reuse its extraction logic only after checking current capabilities, license, dependencies, and how it can be integrated. CodeTrace currently uses Tree-sitter grammar adapters for TypeScript/JavaScript, Python, Java, C/C++, and Go.
 - **LLM:** A tool-calling model accessed server-side through an API key in environment variables. Gemini and Groq's OpenAI-compatible API are supported; keep provider/model configuration out of source code.
 - **Tests:** Automated tests for extraction, graph ingestion/querying, and evidence formatting.
 

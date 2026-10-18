@@ -5,6 +5,42 @@ import { extractRepository } from "../src/index.js";
 const commitSha = "0123456789abcdef0123456789abcdef01234567";
 
 describe("extractRepository", () => {
+  it.each([
+    [".py", "def helper():\n    pass\ndef run():\n    helper()", "helper"],
+    [".java", "class Runner {\n void helper() {}\n void run() {\n  helper();\n }\n}", "helper"],
+    [".c", "void helper() {}\nvoid run() {\n helper();\n}", "helper"],
+    [".cpp", "class Runner {\n void helper() {}\n void run() {\n  helper();\n }\n};", "helper"],
+    [".go", "package main\nfunc helper() {}\nfunc run() { helper() }", "helper"],
+  ])("extracts functions and calls for %s", (extension, source, calledName) => {
+    const result = extractRepository({
+      commitSha,
+      files: [{ path: `src/example${extension}`, source }],
+      repositoryId: "example/repo",
+    });
+
+    expect(
+      result.entities.some((entity) => entity.kind === "Function" && entity.name === calledName),
+    ).toBe(true);
+    expect(result.relationships.some((relationship) => relationship.kind === "CALLS")).toBe(true);
+  });
+
+  it("resolves common-language imports to repository files", () => {
+    const result = extractRepository({
+      commitSha,
+      repositoryId: "example/repo",
+      files: [
+        { path: "pkg/main.py", source: "from .helper import helper\ndef run():\n helper()" },
+        { path: "pkg/helper.py", source: "def helper():\n pass" },
+        { path: "src/main.c", source: '#include "helper.h"\nvoid run() {}' },
+        { path: "src/helper.h", source: "void helper();" },
+      ],
+    });
+
+    expect(
+      result.relationships.filter((relationship) => relationship.kind === "IMPORTS"),
+    ).toHaveLength(2);
+  });
+
   it("extracts entities, resolvable imports, calls, and source ranges", () => {
     const result = extractRepository({
       commitSha,

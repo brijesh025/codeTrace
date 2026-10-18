@@ -440,6 +440,30 @@ The model must not modify source files, create issues, create pull requests, exe
 
 For local development, provider keys belong in `backend/.env` as `GEMINI_API_KEY` and `GROQ_API_KEY`; they must not be placed only in `frontend/.env.local`. The UI exposes exactly `gemini-3.8-flash` and `openai/gpt-oss-20b`. The agent interface and tool boundary remain unchanged.
 
+## Phase 9.5 — Multi-language extraction
+
+Status: implementation complete and worker verification passed. The extractor now accepts Python, Java, C, C++, and Go source files in addition to TypeScript and JavaScript. Each grammar maps into the existing normalized entities and relationships, so graph loading, investigation tools, ranking, and the UI require no language-specific changes.
+
+### Supported extensions
+
+- TypeScript/JavaScript: `.ts`, `.tsx`, `.js`, `.jsx`
+- Python: `.py`
+- Java: `.java`
+- C: `.c`, `.h`
+- C++: `.cc`, `.cpp`, `.cxx`, `.hpp`
+- Go: `.go`
+
+### Current extraction contract
+
+All supported languages produce repository, file, module, function, and class entities where the grammar exposes them. The extractor records `CONTAINS`, `IMPORTS`, and evidence-backed `CALLS` relationships, source ranges, stable IDs, confidence, and syntax diagnostics. Dynamic or ambiguous calls remain unresolved instead of becoming guessed graph edges.
+
+### Exit criteria
+
+- Every supported language has extraction fixtures.
+- Existing TypeScript/JavaScript behavior remains green.
+- The graph schema and investigation tools remain unchanged.
+- Unsupported or ambiguous language constructs produce limited evidence or diagnostics rather than fabricated relationships.
+
 ## Phase 9 — Frontend workflow
 
 Status: implementation complete and verified through frontend proxy tests, type checking, and production build. The real browser workflow still requires the configured GitHub OAuth session and running backend/FalkorDB services for external verification.
@@ -481,6 +505,8 @@ Support clear states for:
 
 ## Phase 10 — End-to-end validation and regression tests
 
+Status: complete. The current suite covers 45 tests across the frontend, backend, and worker; the production build, type checks, lint checks, and diff validation pass. GitHub OAuth has been manually verified. Provider-backed investigation/API quota issues are deferred by choice.
+
 ### Required automated coverage
 
 - URL validation.
@@ -512,6 +538,8 @@ Support clear states for:
 Compare at least a few investigations against a simple keyword-search baseline. Record observations rather than claiming improvement without evidence.
 
 ## Phase 11 — Documentation and handoff
+
+Status: complete. The README now documents prerequisites, local startup, ports, environment contracts, OAuth callback setup, verification commands, supported languages, ingestion limits, troubleshooting, and clean-checkout handoff.
 
 Update `README.md` with:
 

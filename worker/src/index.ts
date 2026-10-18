@@ -1,4 +1,18 @@
-export const supportedSourceExtensions = [".ts", ".tsx", ".js", ".jsx"] as const;
+export const supportedSourceExtensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".java",
+  ".c",
+  ".h",
+  ".cc",
+  ".cpp",
+  ".cxx",
+  ".hpp",
+  ".go",
+] as const;
 
 export type SupportedSourceExtension = (typeof supportedSourceExtensions)[number];
 

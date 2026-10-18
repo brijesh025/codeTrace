@@ -32,7 +32,9 @@
     "verify:phase6": "pnpm verify:phase5",
     "verify:phase7": "pnpm verify:phase6",
     "verify:phase8": "pnpm verify:phase7",
-    "verify:phase9": "pnpm verify:phase8"
+    "verify:phase9": "pnpm verify:phase8",
+    "verify:phase10": "pnpm verify:phase9",
+    "verify:phase11": "pnpm verify:phase10"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

@@ -1,5 +1,6 @@
 import { auth, signIn, signOut } from "../auth";
-import { InvestigationWorkspace } from "../components/investigation-workspace";
+import { HomeLanding } from "../components/home-landing";
+import { SiteNav } from "../components/site-nav";
 
 export default async function HomePage() {
   const session = await auth();
@@ -18,34 +19,14 @@ export default async function HomePage() {
 
   return (
     <main>
-      {session?.user ? (
-        <>
-          <InvestigationWorkspace
-            userLabel={session.user.name ?? session.user.email ?? session.user.id ?? "GitHub user"}
-          />
-          <form action={signOutOfCodeTrace} className="sign-out-form">
-            <button className="text-button" type="submit">
-              Sign out
-            </button>
-          </form>
-        </>
-      ) : (
-        <section className="signed-out-shell">
-          <div className="signed-out-card">
-            <p className="eyebrow">CodeTrace</p>
-            <h1>Evidence-backed codebase investigation.</h1>
-            <p>
-              Connect GitHub, index a public repository, and understand which code paths deserve
-              attention when behavior changes.
-            </p>
-            <form action={signInWithGitHub}>
-              <button className="primary-button" type="submit">
-                Continue with GitHub
-              </button>
-            </form>
-          </div>
-        </section>
-      )}
+      <SiteNav
+        isAuthenticated={Boolean(session?.user)}
+        signInAction={signInWithGitHub}
+        signOutAction={signOutOfCodeTrace}
+        userImage={session?.user?.image}
+        userName={session?.user?.name ?? session?.user?.email ?? session?.user?.id}
+      />
+      <HomeLanding isAuthenticated={Boolean(session?.user)} signInAction={signInWithGitHub} />
     </main>
   );
 }

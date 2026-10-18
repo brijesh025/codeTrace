@@ -62,7 +62,7 @@ interface InvestigationRecord {
 }
 
 interface Props {
-  userLabel: string;
+  initialRepositoryUrl?: string;
 }
 
 interface ModelOption {
@@ -101,8 +101,8 @@ function errorLabel(error: ApiError | undefined, fallback: string): string {
   return error ? `${error.code ? `${error.code}: ` : ""}${error.message}` : fallback;
 }
 
-export function InvestigationWorkspace({ userLabel }: Props) {
-  const [repositoryUrl, setRepositoryUrl] = useState("");
+export function InvestigationWorkspace({ initialRepositoryUrl }: Props = {}) {
+  const [repositoryUrl, setRepositoryUrl] = useState(initialRepositoryUrl ?? "");
   const [question, setQuestion] = useState("");
   const [job, setJob] = useState<IndexJob | null>(null);
   const [investigation, setInvestigation] = useState<InvestigationRecord | null>(null);
@@ -276,10 +276,6 @@ export function InvestigationWorkspace({ userLabel }: Props) {
             Index a public GitHub repository, then ask a focused question about affected code. Every
             finding is paired with graph evidence from the indexed revision.
           </p>
-        </div>
-        <div className="account-chip" title={userLabel}>
-          <span className="account-dot" />
-          {userLabel}
         </div>
       </header>
 

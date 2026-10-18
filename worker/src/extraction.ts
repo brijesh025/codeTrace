@@ -2,12 +2,31 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 
 import Parser, { type SyntaxNode } from "tree-sitter";
+import C from "tree-sitter-c";
+import Cpp from "tree-sitter-cpp";
+import Go from "tree-sitter-go";
+import Java from "tree-sitter-java";
 import JavaScript from "tree-sitter-javascript";
+import Python from "tree-sitter-python";
 import TypeScript from "tree-sitter-typescript";
 
 import type { SupportedSourceExtension } from "./index.js";
 
-const sourceExtensions = new Set<SupportedSourceExtension>([".js", ".jsx", ".ts", ".tsx"]);
+const sourceExtensions = new Set<SupportedSourceExtension>([
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".py",
+  ".java",
+  ".c",
+  ".h",
+  ".cc",
+  ".cpp",
+  ".cxx",
+  ".hpp",
+  ".go",
+]);
 
 type RelationshipKind = "CONTAINS" | "IMPORTS" | "CALLS";
 
@@ -125,16 +144,26 @@ function functionName(node: SyntaxNode): string | null {
     return directName;
   }
 
+  if (["function_definition", "function_declaration"].includes(node.type)) {
+    const declarator = node.childForFieldName("declarator");
+    const named = declarator?.namedChildren.find((child) =>
+      ["identifier", "field_identifier", "type_identifier"].includes(child.type),
+    );
+    return named?.text ?? null;
+  }
+
+  if (node.type === "method_declaration" || node.type === "method_definition") {
+    return node.childForFieldName("name")?.text ?? null;
+  }
+
   if (node.type !== "arrow_function" && node.type !== "function") {
     return null;
   }
 
   const parent = node.parent;
-  if (parent?.type !== "variable_declarator") {
-    return null;
-  }
-
-  return parent.childForFieldName("name")?.text ?? null;
+  return parent?.type === "variable_declarator"
+    ? (parent.childForFieldName("name")?.text ?? null)
+    : null;
 }
 
 function isFunctionNode(node: SyntaxNode): boolean {
@@ -145,11 +174,15 @@ function isFunctionNode(node: SyntaxNode): boolean {
     "generator_function",
     "generator_function_declaration",
     "method_definition",
+    "function_definition",
+    "function_declaration",
+    "method_declaration",
+    "function_item",
   ].includes(node.type);
 }
 
 function isClassNode(node: SyntaxNode): boolean {
-  return ["class", "class_declaration"].includes(node.type);
+  return ["class", "class_declaration", "class_definition", "class_specifier"].includes(node.type);
 }
 
 function walk(node: SyntaxNode, visit: (child: SyntaxNode) => void): void {
@@ -160,13 +193,44 @@ function walk(node: SyntaxNode, visit: (child: SyntaxNode) => void): void {
 }
 
 function importedSource(node: SyntaxNode): string | null {
-  if (node.type === "import_statement") {
+  if (node.type === "import_statement" && node.childForFieldName("source")) {
     return node.childForFieldName("source")?.text.replace(/^['"]|['"]$/g, "") ?? null;
   }
 
   if (node.type === "call_expression" && node.childForFieldName("function")?.text === "require") {
     const argument = node.childForFieldName("arguments")?.namedChildren[0];
     return argument?.type === "string" ? argument.text.replace(/^['"]|['"]$/g, "") : null;
+  }
+
+  if (["import_statement", "import_from_statement"].includes(node.type)) {
+    return (
+      (
+        node.childForFieldName("name")?.text ??
+        node.childForFieldName("module")?.text ??
+        node.text.replace(/^from\s+/, "").split(/\s+import\s+/)[0]
+      )?.replace(/^['"]|['"]$/g, "") ?? null
+    );
+  }
+
+  if (node.type === "import_declaration") {
+    const quoted = node.text.match(/["]([^"]+)["]/);
+    return (
+      quoted?.[1] ??
+      node.text
+        .replace(/^import\s+/, "")
+        .replace(/;$/, "")
+        .trim()
+    );
+  }
+
+  if (node.type === "preproc_include") {
+    const match = node.text.match(/[<"]([^>"]+)[>"]/);
+    return match?.[1] ?? null;
+  }
+
+  if (node.type === "import_spec") {
+    const match = node.text.match(/["]([^"]+)["]/);
+    return match?.[1] ?? null;
   }
 
   return null;
@@ -177,31 +241,78 @@ function resolveRelativeImport(
   importPath: string,
   knownPaths: Set<string>,
 ): string | null {
-  if (!importPath.startsWith(".")) {
-    return null;
-  }
-
-  const basePath = normalizePath(posix.join(posix.dirname(fromPath), importPath));
+  const relativeImportPath = importPath.startsWith("./")
+    ? importPath.slice(2)
+    : importPath.replace(/^\.+/, "");
+  const basePath = importPath.startsWith(".")
+    ? normalizePath(posix.join(posix.dirname(fromPath), relativeImportPath))
+    : normalizePath(importPath.replaceAll(".", "/"));
   const candidates = [basePath];
-  for (const extension of [".ts", ".tsx", ".js", ".jsx"]) {
+  for (const extension of [
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".py",
+    ".java",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".hpp",
+    ".go",
+  ]) {
     candidates.push(`${basePath}${extension}`);
   }
-  for (const extension of [".ts", ".tsx", ".js", ".jsx"]) {
+  for (const extension of [
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".py",
+    ".java",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".hpp",
+    ".go",
+  ]) {
     candidates.push(posix.join(basePath, `index${extension}`));
   }
 
-  return candidates.find((candidate) => knownPaths.has(candidate)) ?? null;
+  return (
+    candidates.find((candidate) => knownPaths.has(candidate)) ??
+    [...knownPaths].find(
+      (candidate) =>
+        candidate.endsWith(importPath) ||
+        candidate.replace(/\.[^.]+$/, "").endsWith(importPath.replaceAll(".", "/")),
+    ) ??
+    null
+  );
 }
 
 function parserForExtension(extension: SupportedSourceExtension): Parser {
   const parser = new Parser();
-  parser.setLanguage(
+  const language =
     extension === ".ts"
       ? TypeScript.typescript
       : extension === ".tsx"
         ? TypeScript.tsx
-        : JavaScript,
-  );
+        : [".js", ".jsx"].includes(extension)
+          ? JavaScript
+          : extension === ".py"
+            ? Python
+            : extension === ".java"
+              ? Java
+              : extension === ".go"
+                ? Go
+                : [".cc", ".cpp", ".cxx", ".hpp"].includes(extension)
+                  ? Cpp
+                  : C;
+  parser.setLanguage(language as unknown as Parameters<Parser["setLanguage"]>[0]);
   return parser;
 }
 
@@ -297,11 +408,14 @@ export function extractRepository(input: ExtractionInput): ExtractionResult {
         }
       }
 
-      if (node.type === "call_expression") {
+      if (["call_expression", "call", "method_invocation"].includes(node.type)) {
         const calledName =
-          node.childForFieldName("function")?.type === "identifier"
-            ? node.childForFieldName("function")?.text
-            : null;
+          node.childForFieldName("function")?.text ??
+          node.childForFieldName("name")?.text ??
+          node.namedChildren.find((child) =>
+            ["identifier", "field_identifier"].includes(child.type),
+          )?.text ??
+          null;
         const targets = calledName ? (functionEntitiesByName.get(calledName) ?? []) : [];
         const target = targets.length === 1 ? targets[0] : undefined;
         if (target) {
