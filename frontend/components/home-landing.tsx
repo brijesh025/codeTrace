@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FileSearch, GitBranch, Network } from "lucide-react";
 
+import { HomeArchitecture } from "./home-architecture";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -95,6 +96,8 @@ export function HomeLanding({ isAuthenticated, signInAction }: HomeLandingProps)
           </Card>
         </div>
       </section>
+
+      <HomeArchitecture />
 
       <section className="home-proof-grid" aria-label="CodeTrace principles">
         <div>

@@ -3,6 +3,7 @@ import { LogIn, LogOut } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
+import { CodeTraceLogo } from "./codetrace-logo";
 
 interface SiteNavProps {
   activePath?: "analyze" | "dashboard" | "home";
@@ -35,7 +36,7 @@ export function SiteNav({
   return (
     <nav className="site-nav" aria-label="Primary navigation">
       <Link className="brand-lockup" href="/" aria-label="CodeTrace home">
-        <span className="brand-mark">CT</span>
+        <span className="brand-mark"><CodeTraceLogo /></span>
         <span className="brand-name">CodeTrace</span>
       </Link>
 
