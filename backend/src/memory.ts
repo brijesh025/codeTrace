@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { GraphQueryClient } from "@codetrace/worker";
 
-import type { InvestigationReport } from "./agent.js";
+import type { InvestigationAction, InvestigationReport } from "./agent.js";
 
 const DEFAULT_MEMORY_LIMIT = 5;
 const MAX_MEMORY_LIMIT = 10;
@@ -30,6 +30,7 @@ export interface RepositoryInvestigationMemory {
   }>;
   id: string;
   investigationId: string;
+  actions: InvestigationAction[];
   question: string;
   repositoryId: string;
   sourceCommitSha: string;
@@ -112,6 +113,7 @@ function memoryFromReport(input: {
     })),
     id: `memory_${randomUUID()}`,
     investigationId: input.investigationId,
+    actions: (input.report.actions ?? []).slice(0, 6),
     question: input.question,
     repositoryId: input.repositoryId,
     sourceCommitSha: input.sourceCommitSha,
@@ -126,13 +128,17 @@ function parseMemory(row: StoredMemoryRow): RepositoryInvestigationMemory | null
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    return {
+    const memory = {
       ...(parsed as RepositoryInvestigationMemory),
       createdAt: row.createdAt,
       id: row.id,
       investigationId: row.investigationId,
       repositoryId: row.repositoryId,
       sourceCommitSha: row.sourceCommitSha,
+    };
+    return {
+      ...memory,
+      actions: Array.isArray(memory.actions) ? memory.actions.slice(0, 6) : [],
     };
   } catch {
     return null;
@@ -143,6 +149,7 @@ function compactMemory(memory: RepositoryInvestigationMemory): RepositoryInvesti
   return {
     ...memory,
     findings: memory.findings.slice(0, 10),
+    actions: memory.actions.slice(0, 6),
     checklist: memory.checklist.slice(0, 10),
     uncertainty: memory.uncertainty.slice(0, 10),
   };

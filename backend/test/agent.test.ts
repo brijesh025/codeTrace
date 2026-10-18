@@ -176,6 +176,15 @@ describe("InvestigationAgent", () => {
         ],
         summary: "The consumer is directly connected to the changed function.",
         uncertainty: [],
+        actions: [
+          {
+            entityIds: ["entity-affected"],
+            kind: "test",
+            rationale: "Verify the affected caller remains compatible.",
+            steps: ["Add a regression test.", "Run the caller test suite."],
+            title: "Add a regression test for the consumer",
+          },
+        ],
       }),
     ]);
     const agent = new InvestigationAgent(llm, fakeTools());
@@ -208,6 +217,13 @@ describe("InvestigationAgent", () => {
         sourceLocations: [affected],
       }),
     );
+    expect(result.report.actions).toEqual([
+      expect.objectContaining({
+        entityIds: ["entity-affected"],
+        kind: "test",
+        title: "Add a regression test for the consumer",
+      }),
+    ]);
     expect(
       llm.requests[1]?.contents.some((content) =>
         content.parts.some((part) => "functionResponse" in part),
@@ -239,5 +255,34 @@ describe("InvestigationAgent", () => {
         expect.objectContaining({ kind: "tool_result", status: "succeeded" }),
       ]),
     });
+  });
+
+  it("omits an action that is not backed by a retrieved evidence path", async () => {
+    const llm = new FakeLlm([
+      functionCall("find_entities", { query: "run" }, "call-1"),
+      finalResponse({
+        actions: [
+          {
+            entityIds: ["entity-root"],
+            kind: "patch",
+            rationale: "Change the implementation.",
+            steps: ["Edit the function."],
+            title: "Patch the function",
+          },
+        ],
+        checklist: [],
+        findings: [],
+        summary: "No supported finding.",
+        uncertainty: [],
+      }),
+    ]);
+    const agent = new InvestigationAgent(llm, fakeTools());
+
+    const result = await agent.run({ ...scope, question: "What should change?" });
+
+    expect(result.report.actions).toEqual([]);
+    expect(result.report.uncertainty).toContain(
+      "A proposed patch action was omitted because it lacked verified graph evidence.",
+    );
   });
 });

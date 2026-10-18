@@ -7,6 +7,7 @@ import { buildApp } from "./app.js";
 import { loadBackendConfig } from "./config.js";
 import { createGraphHealthClient } from "./graph-health.js";
 import { IndexJobManager } from "./indexing.js";
+import { createInvestigationPersistence } from "./investigation-persistence.js";
 import { createInvestigationStore } from "./investigations.js";
 import { RepositoryMemoryStore } from "./memory.js";
 import { createModelRegistry } from "./models.js";
@@ -19,24 +20,26 @@ const investigationGraph = new GraphStore({
 const modelRegistry = createModelRegistry(config);
 const investigationTools = new InvestigationTools(investigationGraph);
 const memoryStore = new RepositoryMemoryStore(investigationGraph);
+const investigationStore = createInvestigationStore({
+  close: () => investigationGraph.close(),
+  getRevision: (userId, repositoryId) => indexingService.getLatestRevision(userId, repositoryId),
+  hasRepository: (userId, repositoryId) => indexingService.hasRepository(userId, repositoryId),
+  memoryStore,
+  persistence: createInvestigationPersistence(investigationGraph),
+  run: async (input) => {
+    const investigationAgent = new InvestigationAgent(
+      modelRegistry.createClient(input.modelId),
+      investigationTools,
+    );
+    return investigationAgent.run(input);
+  },
+});
 const app = buildApp({
   authInternalSecret: config.AUTH_INTERNAL_SECRET,
   graphHealthClient: createGraphHealthClient(config.FALKORDB_URL),
   indexingService,
   modelRegistry,
-  investigationStore: createInvestigationStore({
-    close: () => investigationGraph.close(),
-    getRevision: (userId, repositoryId) => indexingService.getLatestRevision(userId, repositoryId),
-    hasRepository: (userId, repositoryId) => indexingService.hasRepository(userId, repositoryId),
-    memoryStore,
-    run: async (input) => {
-      const investigationAgent = new InvestigationAgent(
-        modelRegistry.createClient(input.modelId),
-        investigationTools,
-      );
-      return investigationAgent.run(input);
-    },
-  }),
+  investigationStore,
 });
 
 const close = async () => {
@@ -46,6 +49,8 @@ const close = async () => {
 
 process.once("SIGINT", close);
 process.once("SIGTERM", close);
+
+await investigationStore.ready?.();
 
 await app.listen({
   host: config.BACKEND_HOST,

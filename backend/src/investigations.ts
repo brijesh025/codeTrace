@@ -41,6 +41,13 @@ export type InvestigationRunner = (
   input: InvestigationRunInput,
 ) => Promise<InvestigationAgentResult>;
 
+export type StoredInvestigationRecord = InvestigationRecord & { userId: string };
+
+export interface InvestigationPersistence {
+  load(): Promise<StoredInvestigationRecord[]>;
+  save(record: StoredInvestigationRecord): Promise<void>;
+}
+
 export interface InvestigationStore {
   close?(): Promise<void>;
   create(input: {
@@ -50,6 +57,7 @@ export interface InvestigationStore {
     userId: string;
   }): InvestigationRecord | null;
   get(userId: string, investigationId: string): InvestigationRecord | null;
+  ready?(): Promise<void>;
 }
 
 export interface InvestigationStoreOptions {
@@ -57,6 +65,7 @@ export interface InvestigationStoreOptions {
   getRevision?: (userId: string, repositoryId: string) => RepositoryRevision | null;
   hasRepository: (userId: string, repositoryId: string) => boolean;
   memoryStore?: InvestigationMemoryStore;
+  persistence?: InvestigationPersistence;
   run?: InvestigationRunner;
 }
 
@@ -84,10 +93,49 @@ export function createInvestigationStore(
 ): InvestigationStore {
   const options: InvestigationStoreOptions =
     typeof input === "function" ? { hasRepository: input } : input;
-  const records = new Map<string, InvestigationRecord & { userId: string }>();
+  const records = new Map<string, StoredInvestigationRecord>();
+  let persistenceQueue = Promise.resolve();
+
+  const persistSnapshot = (record: StoredInvestigationRecord): Promise<void> => {
+    if (!options.persistence) {
+      return Promise.resolve();
+    }
+    persistenceQueue = persistenceQueue
+      .then(() => options.persistence?.save(record))
+      .then(() => undefined)
+      .catch(() => undefined);
+    return persistenceQueue;
+  };
+
+  const ready = async (): Promise<void> => {
+    if (!options.persistence) {
+      return;
+    }
+    const restored = await options.persistence.load();
+    for (const record of restored) {
+      if (record.status === "queued" || record.status === "running") {
+        record.error = {
+          code: "INVESTIGATION_INTERRUPTED",
+          message:
+            "The investigation was interrupted by a backend restart. Start a new run to retry.",
+        };
+        record.status = "failed";
+        record.updatedAt = new Date().toISOString();
+        await persistSnapshot(record);
+      }
+      records.set(record.id, record);
+    }
+  };
 
   const store: InvestigationStore = {
-    ...(options.close ? { close: options.close } : {}),
+    ...(options.close || options.persistence
+      ? {
+          close: async () => {
+            await persistenceQueue;
+            await options.close?.();
+          },
+        }
+      : {}),
     create(createInput) {
       if (!options.hasRepository(createInput.userId, createInput.repositoryId)) {
         return null;
@@ -111,11 +159,12 @@ export function createInvestigationStore(
         userId: createInput.userId,
       };
       records.set(record.id, record);
+      void persistSnapshot(record);
 
       const runner = options.run;
       if (runner && revision) {
         queueMicrotask(() => {
-          void runRecord(record, runner, revision, options.memoryStore);
+          void runRecord(record, runner, revision, persistSnapshot, options.memoryStore);
         });
       }
 
@@ -125,6 +174,7 @@ export function createInvestigationStore(
       const record = records.get(investigationId);
       return record && record.userId === userId ? publicRecord(record) : null;
     },
+    ready,
   };
 
   return store;
@@ -134,10 +184,12 @@ async function runRecord(
   record: InvestigationRecord & { userId: string },
   run: InvestigationRunner,
   revision: RepositoryRevision,
+  persistSnapshot: (record: StoredInvestigationRecord) => Promise<void>,
   memoryStore?: InvestigationMemoryStore,
 ): Promise<void> {
   record.status = "running";
   record.updatedAt = new Date().toISOString();
+  await persistSnapshot(record);
   try {
     let priorMemories: RepositoryInvestigationMemory[] = [];
     if (memoryStore) {
@@ -187,5 +239,6 @@ async function runRecord(
     record.status = "failed";
   } finally {
     record.updatedAt = new Date().toISOString();
+    await persistSnapshot(record);
   }
 }

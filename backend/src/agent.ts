@@ -93,9 +93,20 @@ export interface InvestigationFinding {
   sourceLocations: InvestigationEntity[];
 }
 
+export type InvestigationActionKind = "inspect" | "issue" | "patch" | "test";
+
+export interface InvestigationAction {
+  entityIds: string[];
+  kind: InvestigationActionKind;
+  rationale: string;
+  steps: string[];
+  title: string;
+}
+
 export interface InvestigationReport {
   checklist: string[];
   findings: InvestigationFinding[];
+  actions: InvestigationAction[];
   summary: string;
   uncertainty: string[];
 }
@@ -244,6 +255,20 @@ const finalResponseSchema = z
           .strict(),
       )
       .max(20),
+    actions: z
+      .array(
+        z
+          .object({
+            entityIds: z.array(z.string().min(1).max(300)).min(1).max(10),
+            kind: z.enum(["inspect", "issue", "patch", "test"]),
+            rationale: z.string().min(1).max(1_000),
+            steps: z.array(z.string().min(1).max(500)).min(1).max(6),
+            title: z.string().min(1).max(200),
+          })
+          .strict(),
+      )
+      .max(6)
+      .default([]),
     summary: z.string().min(1).max(5_000),
     uncertainty: z.array(z.string().min(1).max(500)).max(10),
   })
@@ -255,8 +280,9 @@ Never invent entity IDs, paths, line numbers, relationship paths, or confidence 
 Use tools to retrieve graph evidence before making findings. A substantive finding must use an entity ID returned by a tool and have a retrieved evidence path.
 Prior repository memory is a hint for investigation direction only. It may come from an older commit and is never evidence by itself; verify relevant claims with the current graph tools.
 After gathering enough evidence, respond with JSON only using this shape:
-{"summary":"...","findings":[{"entityId":"...","priority":"high|medium|low","reason":"..."}],"checklist":["..."],"uncertainty":["..."]}
+{"summary":"...","findings":[{"entityId":"...","priority":"high|medium|low","reason":"..."}],"checklist":["..."],"uncertainty":["..."],"actions":[{"kind":"inspect|issue|patch|test","title":"...","rationale":"...","steps":["..."],"entityIds":["..."]}]}
 Do not include evidence paths in your JSON; the server attaches verified evidence to each finding.
+Actions are safe draft proposals only. Never claim to edit files, push code, or create an external issue. Every action must reference one or more entity IDs returned by tools and backed by retrieved evidence paths.
 If graph coverage is insufficient, return no unsupported finding and explain the limitation in uncertainty.`;
 
 function extractJson(text: string): unknown {
@@ -309,6 +335,29 @@ function compactToolResult(result: unknown): unknown {
     truncatedForModel: true,
     resultPreview: serialized.slice(0, MAX_TOOL_RESULT_CHARS),
   };
+}
+
+function validateActions(
+  actions: InvestigationAction[],
+  entities: Map<string, InvestigationEntity>,
+  evidencePaths: Map<string, InvestigationResult["results"][number]["evidencePaths"]>,
+): { actions: InvestigationAction[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const verified = actions.flatMap((action) => {
+    const entityIds = [...new Set(action.entityIds)];
+    const isSupported = entityIds.every(
+      (entityId) => entities.has(entityId) && (evidencePaths.get(entityId)?.length ?? 0) > 0,
+    );
+    if (!isSupported) {
+      warnings.push(
+        `A proposed ${action.kind} action was omitted because it lacked verified graph evidence.`,
+      );
+      return [];
+    }
+    return [{ ...action, entityIds }];
+  });
+
+  return { actions: verified, warnings };
 }
 
 export class InvestigationAgent {
@@ -463,11 +512,17 @@ export class InvestigationAgent {
         });
       }
 
-      const uncertainty = [...parsed.data.uncertainty];
+      const validatedActions = validateActions(parsed.data.actions, entities, evidencePaths);
+      const uncertainty = [...parsed.data.uncertainty, ...validatedActions.warnings];
       if (toolErrors.length > 0) {
         uncertainty.push(`Some investigation tools failed: ${toolErrors.join("; ")}`);
       }
-      const report = { ...parsed.data, findings, uncertainty: [...new Set(uncertainty)] };
+      const report = {
+        ...parsed.data,
+        actions: validatedActions.actions,
+        findings,
+        uncertainty: [...new Set(uncertainty)],
+      };
       trace.push({
         id: `trace-${trace.length + 1}`,
         kind: "final",
@@ -521,10 +576,14 @@ export class InvestigationAgent {
         sourceLocations: sourceLocations.get(finding.entityId) ?? [],
       });
     }
+    const validatedActions = validateActions(parsed.data.actions, entities, evidencePaths);
     const report = {
       ...parsed.data,
+      actions: validatedActions.actions,
       findings,
-      uncertainty: [...new Set([...parsed.data.uncertainty, ...toolErrors])],
+      uncertainty: [
+        ...new Set([...parsed.data.uncertainty, ...validatedActions.warnings, ...toolErrors]),
+      ],
     };
     trace.push({
       id: `trace-${trace.length + 1}`,

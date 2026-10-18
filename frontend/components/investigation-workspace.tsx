@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { ActionPlan } from "./action-plan";
 import { EvidenceGraph } from "./evidence-graph";
 
 type IndexStatus = "failed" | "queued" | "running" | "succeeded";
@@ -78,6 +79,13 @@ interface InvestigationRecord {
   report?: {
     checklist: string[];
     findings: Finding[];
+    actions?: Array<{
+      entityIds: string[];
+      kind: "inspect" | "issue" | "patch" | "test";
+      rationale: string;
+      steps: string[];
+      title: string;
+    }>;
     summary: string;
     uncertainty: string[];
   };
@@ -572,6 +580,8 @@ function ReportContent({ report }: { report: NonNullable<InvestigationRecord["re
       </div>
 
       <EvidenceGraph findings={report.findings} />
+
+      <ActionPlan actions={report.actions ?? []} findings={report.findings} />
 
       <div className="report-columns">
         <div>

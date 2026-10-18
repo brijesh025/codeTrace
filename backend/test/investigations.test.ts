@@ -13,6 +13,68 @@ function tick(): Promise<void> {
 }
 
 describe("Investigation store", () => {
+  it("restores owned records and persists new history snapshots", async () => {
+    const saved: Array<{ id: string; status: string }> = [];
+    const store = createInvestigationStore({
+      hasRepository: () => true,
+      persistence: {
+        load: async () => [
+          {
+            createdAt: "2026-10-18T00:00:00.000Z",
+            id: "investigation-restored",
+            question: "What is affected?",
+            repositoryId: revision.repositoryId,
+            status: "succeeded" as const,
+            updatedAt: "2026-10-18T00:01:00.000Z",
+            userId: "user-1",
+          },
+          {
+            createdAt: "2026-10-18T00:02:00.000Z",
+            id: "investigation-interrupted",
+            question: "What was running?",
+            repositoryId: revision.repositoryId,
+            status: "running" as const,
+            updatedAt: "2026-10-18T00:03:00.000Z",
+            userId: "user-1",
+          },
+        ],
+        save: async (record) => {
+          saved.push({ id: record.id, status: record.status });
+        },
+      },
+    });
+
+    await store.ready?.();
+
+    expect(store.get("user-1", "investigation-restored")).toEqual(
+      expect.objectContaining({ status: "succeeded" }),
+    );
+    expect(store.get("user-1", "investigation-interrupted")).toEqual(
+      expect.objectContaining({
+        error: {
+          code: "INVESTIGATION_INTERRUPTED",
+          message:
+            "The investigation was interrupted by a backend restart. Start a new run to retry.",
+        },
+        status: "failed",
+      }),
+    );
+    expect(store.get("user-2", "investigation-restored")).toBeNull();
+
+    const created = store.create({
+      question: "What should I inspect?",
+      repositoryId: revision.repositoryId,
+      userId: "user-1",
+    });
+    if (!created) {
+      throw new Error("Investigation was not created.");
+    }
+    await tick();
+
+    expect(saved).toContainEqual({ id: "investigation-interrupted", status: "failed" });
+    expect(saved).toContainEqual({ id: created.id, status: "pending" });
+  });
+
   it("runs an owned investigation and persists its report", async () => {
     let runnerModel: string | undefined;
     const store = createInvestigationStore({
