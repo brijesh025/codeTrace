@@ -22,7 +22,7 @@ describe("model registry", () => {
     });
     const registry = createModelRegistry(config);
 
-    expect(registry.defaultModel).toBe("@cf/openai/gpt-oss-20b");
+    expect(registry.defaultModel).toBe("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
     expect(registry.list()[0]?.provider).toBe("cloudflare");
   });
 

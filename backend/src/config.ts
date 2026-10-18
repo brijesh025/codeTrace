@@ -9,7 +9,7 @@ const environmentSchema = z.object({
   GROQ_API_KEY: z.string().min(1).optional(),
   CLOUDFLARE_ACCOUNT_ID: z.string().min(1).optional(),
   CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
-  CLOUDFLARE_MODEL: z.string().min(1).default("@cf/openai/gpt-oss-20b"),
+  CLOUDFLARE_MODEL: z.string().min(1).default("@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
   LLM_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
 });
 

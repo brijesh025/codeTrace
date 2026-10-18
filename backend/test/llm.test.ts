@@ -155,4 +155,52 @@ describe("Gemini client", () => {
     expect(requestBody).not.toHaveProperty("tools");
     expect(requestBody).not.toHaveProperty("tool_choice");
   });
+
+  it("enables JSON mode for the final response when configured", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const client = createOpenAiCompatibleClient({
+      apiKey: "test-provider-key",
+      jsonMode: true,
+      fetchImpl: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "{}" } }] }),
+          { status: 200 },
+        );
+      },
+    });
+
+    await client.generate({
+      contents: [{ parts: [{ text: "Return JSON." }], role: "user" }],
+      toolConfig: { functionCallingConfig: { mode: "NONE" } },
+    });
+
+    expect(requestBody).toMatchObject({ response_format: { type: "json_object" } });
+  });
+
+  it("serializes assistant tool-call content as an empty string", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const client = createOpenAiCompatibleClient({
+      apiKey: "test-provider-key",
+      fetchImpl: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "{}" } }] }),
+          { status: 200 },
+        );
+      },
+    });
+
+    await client.generate({
+      contents: [
+        {
+          parts: [{ functionCall: { args: { query: "run" }, id: "call-1", name: "find_entities" } }],
+          role: "model",
+        },
+      ],
+    });
+
+    const messages = requestBody?.messages as Array<Record<string, unknown>>;
+    expect(messages[0]?.content).toBe("");
+  });
 });

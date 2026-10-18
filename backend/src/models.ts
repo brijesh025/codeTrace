@@ -13,9 +13,9 @@ export interface AvailableModel {
 
 const modelCatalog: AvailableModel[] = [
   {
-    description: "GPT-OSS through Cloudflare with JSON and tool calling.",
-    id: "@cf/openai/gpt-oss-20b",
-    label: "GPT-OSS 20B · Cloudflare",
+    description: "Llama 3.3 through Cloudflare with JSON mode and tool calling.",
+    id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    label: "Llama 3.3 70B · Cloudflare",
     provider: "cloudflare",
     recommended: true,
   },
@@ -103,6 +103,7 @@ export class ModelRegistry {
     return createOpenAiCompatibleClient({
       apiKey,
       baseUrl,
+      jsonMode: model.provider === "cloudflare",
       model: model.provider === "cloudflare" ? this.config.CLOUDFLARE_MODEL : model.id,
       timeoutMs: this.config.LLM_TIMEOUT_MS,
     });

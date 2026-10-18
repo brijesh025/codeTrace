@@ -118,9 +118,37 @@ function parseText(content: LlmContent | undefined): string {
 }
 
 function providerMessage(payload: unknown, status: number): string {
-  return isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === "string"
-    ? payload.error.message
-    : `LLM request failed with status ${status}.`;
+  if (!isRecord(payload)) {
+    return `LLM request failed with status ${status}.`;
+  }
+
+  if (isRecord(payload.error) && typeof payload.error.message === "string") {
+    return payload.error.message;
+  }
+
+  if (Array.isArray(payload.errors)) {
+    const messages = payload.errors.flatMap((error) => {
+      if (typeof error === "string") {
+        return [error];
+      }
+      if (isRecord(error) && typeof error.message === "string") {
+        return [error.message];
+      }
+      return [];
+    });
+    if (messages.length > 0) {
+      return messages.join("; ");
+    }
+  }
+
+  if (Array.isArray(payload.messages)) {
+    const messages = payload.messages.filter((message): message is string => typeof message === "string");
+    if (messages.length > 0) {
+      return messages.join("; ");
+    }
+  }
+
+  return `LLM request failed with status ${status}.`;
 }
 
 function retryAfterMilliseconds(response: Response, message: string): number | undefined {
@@ -246,6 +274,7 @@ export interface OpenAiCompatibleClientOptions {
   fetchImpl?: typeof fetch;
   maxRetries?: number;
   model?: string;
+  jsonMode?: boolean;
   retryDelayMs?: number;
   timeoutMs?: number;
 }
@@ -268,7 +297,9 @@ function openAiMessages(request: LlmGenerateRequest): Array<Record<string, unkno
 
     if (functionCalls.length > 0) {
       messages.push({
-        ...(text ? { content: text } : { content: null }),
+        // Cloudflare's OpenAI-compatible validator requires content to be a
+        // string even when the assistant message only contains tool calls.
+        content: text,
         role: "assistant",
         tool_calls: functionCalls.map((part, index) => {
           const call = part.functionCall as Record<string, unknown>;
@@ -377,6 +408,7 @@ export function createOpenAiCompatibleClient({
   fetchImpl = fetch,
   maxRetries = 2,
   model = "openai/gpt-oss-20b",
+  jsonMode = false,
   retryDelayMs = 250,
   timeoutMs = 30_000,
 }: OpenAiCompatibleClientOptions = {}): LlmClient {
@@ -399,6 +431,9 @@ export function createOpenAiCompatibleClient({
         messages: openAiMessages(request),
         model,
         ...(tools && toolChoice !== "NONE" ? { tool_choice: "auto" } : {}),
+        ...(jsonMode && toolChoice === "NONE"
+          ? { response_format: { type: "json_object" } }
+          : {}),
       };
 
       for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
