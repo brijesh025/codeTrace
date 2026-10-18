@@ -125,4 +125,34 @@ describe("Gemini client", () => {
       { args: { query: "run" }, id: "call-1", name: "find_entities" },
     ]);
   });
+
+  it("omits tool choice when requesting a final response without tools", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const client = createOpenAiCompatibleClient({
+      apiKey: "test-provider-key",
+      fetchImpl: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '{"summary":"done","findings":[],"checklist":[],"uncertainty":[]}',
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    await client.generate({
+      contents: [{ parts: [{ text: "Return the final JSON." }], role: "user" }],
+      toolConfig: { functionCallingConfig: { mode: "NONE" } },
+    });
+
+    expect(requestBody).not.toHaveProperty("tools");
+    expect(requestBody).not.toHaveProperty("tool_choice");
+  });
 });

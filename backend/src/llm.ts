@@ -389,14 +389,16 @@ export function createOpenAiCompatibleClient({
         );
       }
 
+      const tools = openAiTools(request);
+      const toolChoice = request.toolConfig?.functionCallingConfig.mode;
       const body = {
         ...(request.generationConfig?.temperature !== undefined
           ? { temperature: request.generationConfig.temperature }
           : {}),
-        ...(openAiTools(request) ? { tools: openAiTools(request) } : {}),
+        ...(tools ? { tools } : {}),
         messages: openAiMessages(request),
         model,
-        tool_choice: request.toolConfig?.functionCallingConfig.mode === "NONE" ? "none" : "auto",
+        ...(tools && toolChoice !== "NONE" ? { tool_choice: "auto" } : {}),
       };
 
       for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
